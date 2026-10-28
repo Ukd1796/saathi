@@ -11,7 +11,7 @@ from .models import Chemist, Company, Doctor, Product, Rep
 MAX_PROMPT_NAMES = 300  # beyond this, resolve_names and the per-rep list carry the load
 MAX_KEYWORDS = 50  # Bolna's transcriber keyword limit
 
-WELCOME = "Namaste! Saathi bol rahi hoon. Visit report dena hai, ya kisi doctor ki briefing chahiye?"
+WELCOME = "नमस्ते! साथी बोल रही हूँ। Visit report देनी है, या किसी doctor की briefing चाहिए?"
 HANGUP_MESSAGE = "Dhanyavaad!"
 HANGUP_PROMPT = """End the call only in one of these cases:
 1. The agent has read back the full visit and the MR clearly confirmed it (e.g. "haan", "sahi hai", "correct", "yes", "that's right") with no correction or new detail in the same reply.
@@ -71,7 +71,7 @@ def keywords(names: dict) -> str:
 def _tool(name, description, params, path, company):
     props = {p: {"type": "string", "description": d} for p, d in params.items()}
     return (
-        {"name": name, "description": description, "key": "custom_task", "pre_call_message": "Ek second...",
+        {"name": name, "description": description, "key": "custom_task", "pre_call_message": "एक second...",
          "parameters": {"type": "object", "properties": props, "required": list(params)}},
         {"method": "POST", "url": f"{PUBLIC_BASE_URL}{path}?company={company.id}",
          "api_token": f"Bearer {company.tool_token}",
