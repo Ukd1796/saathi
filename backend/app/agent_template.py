@@ -23,7 +23,7 @@ The MR may speak Hindi, Hinglish or English; judge the meaning, not the language
 Do NOT end the call if the MR's last reply contains a correction, a new detail, or a question, even if it also contains "haan" or "yes"."""
 
 EXTRACTIONS = [
-    ("call_type", 'Was this call a visit report or a request for a pre-visit briefing about a doctor? Answer exactly "debrief" or "briefing". If the MR did both, answer "debrief".'),
+    ("call_type", 'Was this call a visit report or a request for a pre-visit briefing about a doctor? Answer exactly "debrief" or "briefing". It is "briefing" if the MR asked about the last visit or history of a doctor, or said they are about to meet a doctor, and did not report a new visit of their own. Saathi reading out an earlier visit is a briefing, not a visit report. Answer "debrief" only if the MR reported a new visit (if they did both, "debrief").'),
     ("doctor_name", 'Which doctor did the MR report visiting? Give the name in English letters, e.g. "Dr Mehta". Use the name the agent read back and the MR confirmed. Write "none" if this was only a briefing.'),
     ("area", "Which area was the visit in? English letters, as confirmed in the read-back."),
     ("products_discussed", 'Which products were discussed with the doctor? Separated by semicolons, in English letters with strength, e.g. "Telma 40; Cardivas". Write "none" if none.'),
@@ -123,7 +123,7 @@ def agent_config(session, company: Company) -> dict:
                     "synthesizer": {
                         "provider": "elevenlabs", "stream": True, "caching": True, "buffer_size": 220, "audio_format": "wav",
                         "provider_config": {"model": "eleven_turbo_v2_5", "voice": "Riya Rao - Confident and Professional",
-                                            "voice_id": "mfMM3ijQgz8QtMeKifko", "speed": 1.0, "temperature": 0.5,
+                                            "voice_id": "mfMM3ijQgz8QtMeKifko", "speed": 0.9, "temperature": 0.5,
                                             "similarity_boost": 0.6, "style": 0.0},
                     },
                     "transcriber": {"provider": "deepgram", "model": "nova-3", "language": "hi", "stream": True,

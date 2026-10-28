@@ -39,10 +39,10 @@ def doctor_brief(session, doctor: Doctor) -> dict:
         v = visits[0]
         who = f" by {v.rep.name}" if v.rep else ""
         lines.append(f"Last visit {_ago(v.visited_at)}{who}.")
-        samples = [f"{i.product.name if i.product else i.product_raw} {i.quantity or ''}".strip()
+        samples = [(f"{i.quantity} of " if i.quantity else "") + (i.product.name if i.product else i.product_raw)
                    for i in v.items if i.kind == "sample"]
         if samples:
-            lines.append("Samples given: " + ", ".join(samples) + ".")
+            lines.append("Samples given: " + ", ".join(samples) + ".")  # "4 of Telma 40", never "Telma 40 4"
         if v.feedback:
             lines.append(f"Doctor's feedback: {v.feedback}")
         if v.next_visit_raw:
