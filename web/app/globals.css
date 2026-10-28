@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f6f7ff;
+  --card: #ffffff;
+  --soft: #f0f1fa;
+  --line: #e6e8f5;
+  --ink: #14162b;
+  --muted: #6b6f8a;
+  --brand: #4f46e5;
+  --brand-ink: #312e81;
+  --brand-soft: #eef0ff;
+  --coral: #f97362;
+  --coral-soft: #fff0ed;
+  --good: #16a34a;
+  --warn: #d97706;
+  --bad: #ef4444;
+  --sidebar: #1e1b4b;
+  --sidebar-ink: #e0e7ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d0e1a;
+    --card: #161829;
+    --soft: #1f2236;
+    --line: #2a2d45;
+    --ink: #eceefb;
+    --muted: #9a9fbe;
+    --brand: #818cf8;
+    --brand-ink: #c7d2fe;
+    --brand-soft: #23264a;
+    --coral: #fb8a7b;
+    --coral-soft: #3a2224;
+    --good: #4ade80;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --sidebar: #11122a;
+    --sidebar-ink: #c7d2fe;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d0e1a;
+  --card: #161829;
+  --soft: #1f2236;
+  --line: #2a2d45;
+  --ink: #eceefb;
+  --muted: #9a9fbe;
+  --brand: #818cf8;
+  --brand-ink: #c7d2fe;
+  --brand-soft: #23264a;
+  --coral: #fb8a7b;
+  --coral-soft: #3a2224;
+  --good: #4ade80;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --sidebar: #11122a;
+  --sidebar-ink: #c7d2fe;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-soft: var(--soft);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
+  --color-coral: var(--coral);
+  --color-coral-soft: var(--coral-soft);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-ink: var(--sidebar-ink);
+  /* old name, kept so any leftover class still renders in the brand colour */
+  --color-accent: var(--brand);
+  --font-sans: var(--font-jakarta);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-jakarta), system-ui, sans-serif;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes drawer-in {
+  from { transform: translateX(-100%); }
+  to { transform: none; }
+}

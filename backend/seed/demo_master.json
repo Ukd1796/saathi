@@ -1,0 +1,28 @@
+{
+  "_note": "Demo master lists for a Pune area team. Same names as the H1 test cards and the agent's keyword list, so all three stay in step.",
+  "doctors": [
+    {"name": "Dr Mehta", "area": "Kothrud", "speciality": "Cardiologist"},
+    {"name": "Dr Rao", "area": "Aundh", "speciality": "Physician"},
+    {"name": "Dr Kulkarni", "area": "Baner", "speciality": "Diabetologist"},
+    {"name": "Dr Deshpande", "area": "Aundh", "speciality": "Physician"},
+    {"name": "Dr Iyer", "area": "Shivaji Nagar", "speciality": "Cardiologist"},
+    {"name": "Dr Banerjee", "area": "Hadapsar", "speciality": "General Practitioner"},
+    {"name": "Dr Qureshi", "area": "Wakad", "speciality": "Gastroenterologist"},
+    {"name": "Dr Saxena", "area": "Kothrud", "speciality": "Orthopaedic"},
+    {"name": "Dr Joshi", "area": "Baner", "speciality": "Endocrinologist"},
+    {"name": "Dr Patil", "area": "Hadapsar", "speciality": "Pulmonologist"}
+  ],
+  "chemists": [
+    {"name": "Sharma Medical", "area": "Kothrud"},
+    {"name": "Gupta Medicos", "area": "Aundh"},
+    {"name": "Shree Ganesh Medical", "area": "Shivaji Nagar"},
+    {"name": "Om Sai Medical", "area": "Baner"},
+    {"name": "Wellness Chemist", "area": "Wakad"},
+    {"name": "Krishna Medical", "area": "Hadapsar"}
+  ],
+  "products": [
+    "Telma 40", "Telma H", "Cardivas", "Pan 40", "Pan D", "Dolo 650", "Augmentin 625",
+    "Azithral 500", "Montair LC", "Shelcal 500", "Ecosprin 75", "Thyronorm 50", "Glycomet GP1",
+    "Janumet", "Rosuvas 10", "Storvas 20", "Amlong 5", "Zerodol SP", "Becosules", "Limcee"
+  ]
+}

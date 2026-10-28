@@ -1,0 +1,26 @@
+# secrets and local data
+.env
+.env.*
+!.env.example
+*.db
+*.pem
+
+# python
+.venv/
+__pycache__/
+.pytest_cache/
+
+# node / next
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+
+.DS_Store
+
+# create-next-app leftovers kept locally
+web/README.md
+web/AGENTS.md
+web/public/

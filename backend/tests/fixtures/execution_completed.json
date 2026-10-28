@@ -1,0 +1,28 @@
+{
+  "id": "test-exec-0001",
+  "agent_id": "00000000-0000-0000-0000-000000000000",
+  "status": "completed",
+  "conversation_duration": 74.2,
+  "total_cost": 3.1,
+  "transcript": "assistant: Namaste! Visit report ke liye bataiye, kaunse doctor se mil ke aaye?\nuser: Dr Mehta ke paas gaya tha Kothrud mein, Telma 40 aur Cardivas discuss kiya, Telma ke chaar strip sample diye. Unko bola tha next time Cardivas ka study le aaunga. Sharma Medical mein Cardivas khatam tha.\nassistant: Next visit kab hai?\nuser: Tuesday ko.\nassistant: Dr Mehta, Kothrud. Telma 40 ke chaar, yaani four, sample. Sharma Medical mein Cardivas out of stock. Next visit Tuesday. Sahi hai?\nuser: Haan sahi hai.\nassistant: Theek hai, record ho gaya. Dhanyavaad!",
+  "extracted_data": {
+    "Visit": {
+      "doctor_name": "Dr. Mehtaa",
+      "area": "Kothrud",
+      "products_discussed": "Telma 40; Cardivas",
+      "samples": "Telma 40: 4",
+      "orders": "none",
+      "chemist_name": "Sharma Medicals",
+      "stock_outs": "Cardivas",
+      "next_visit": "next Tuesday",
+      "feedback": "Says Telma is priced higher than Sun's brand.",
+      "promises": "Bring the Cardivas clinical study next visit"
+    }
+  },
+  "telephony_data": {
+    "from_number": "+919876543210",
+    "to_number": "+918000000000",
+    "call_type": "inbound",
+    "provider": "plivo"
+  }
+}

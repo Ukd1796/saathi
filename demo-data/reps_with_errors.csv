@@ -1,0 +1,5 @@
+name,phone,area,manager
+Sneha Kulkarni,0000000001,Dadar; Parel,Rahul Desai
+Sneha Kulkarni duplicate,0000000001,Dadar,Rahul Desai
+No Phone Rep,,Andheri,Rahul Desai
+Bad Phone Rep,12345,Bandra,Rahul Desai

@@ -1,0 +1,351 @@
+"""Read and act on the field data: overview, visits, doctors, promises, stock-outs, the review
+queue for names the matcher could not place, and rep handover."""
+
+from collections import Counter
+from datetime import datetime, timedelta
+
+from zoneinfo import ZoneInfo
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from ..briefing import OVERDUE_DAYS, doctor_brief
+from ..db import get_session
+from ..models import (Call, Chemist, Doctor, OutboundCall, Product, Promise, Rep, StockOut, User, Visit,
+                      utcnow)
+from ..auth import current_user
+from ..names import Resolver, learn_alias
+from ..outbound import TZ, reps_without_visits_today, start_of_local_day_utc
+
+router = APIRouter(prefix="/api")
+
+
+def _iso(dt):
+    return dt.isoformat() + "Z" if dt else None
+
+
+def item_name(i):
+    return i.product.name if i.product else i.product_raw
+
+
+def visit_json(v: Visit, full=False):
+    out = {
+        "id": v.id, "call_id": v.call_id, "visited_at": _iso(v.visited_at),
+        "rep": v.rep.name if v.rep else None, "rep_id": v.rep_id,
+        "doctor": v.doctor.name if v.doctor else None, "doctor_id": v.doctor_id, "doctor_heard": v.doctor_raw,
+        "area": v.area, "products_discussed": v.products_discussed,
+        "samples": [{"product": item_name(i), "qty": i.quantity, "matched": i.product_id is not None}
+                    for i in v.items if i.kind == "sample"],
+        "orders": [{"product": item_name(i), "qty": i.quantity, "matched": i.product_id is not None}
+                   for i in v.items if i.kind == "order"],
+        "chemist": v.chemist.name if v.chemist else v.chemist_raw, "chemist_matched": v.chemist_id is not None,
+        "stock_outs": [item_name(s) for s in v.stock_outs],
+        "promises": [{"id": p.id, "text": p.text, "status": p.status} for p in v.promises],
+        "feedback": v.feedback, "next_visit": v.next_visit_raw, "unmatched": v.unmatched,
+    }
+    if full and v.call:
+        out["call"] = {"duration_s": v.call.duration_s, "transcript": v.call.transcript, "direction": v.call.direction,
+                       "extracted": v.call.extracted, "cost": v.call.cost, "recording_url": recording_url(v.call.raw)}
+    return out
+
+
+def recording_url(raw):
+    raw = raw or {}
+    return (raw.get("telephony_data") or {}).get("recording_url") or raw.get("recording_url")
+
+
+def local_date(dt):
+    return dt.replace(tzinfo=ZoneInfo("UTC")).astimezone(TZ).date()
+
+
+def _visit(session, user, visit_id) -> Visit:
+    v = session.get(Visit, visit_id)
+    if v is None or v.company_id != user.company_id:
+        raise HTTPException(404, "no such visit")
+    return v
+
+
+@router.get("/overview")
+def overview(user: User = Depends(current_user), session: Session = Depends(get_session)):
+    cid = user.company_id
+    today = start_of_local_day_utc()
+    week = utcnow() - timedelta(days=7)
+    calls = session.scalars(select(Call).where(Call.company_id == cid).order_by(Call.created_at.desc()).limit(15)).all()
+    open_promises = session.scalars(select(Promise).join(Visit).where(Visit.company_id == cid, Promise.status == "open")).all()
+    overdue = [p for p in open_promises if (utcnow() - p.created_at).days > OVERDUE_DAYS]
+    review = session.scalars(select(Visit).where(Visit.company_id == cid)).all()
+    reps = session.scalars(select(Rep).where(Rep.company_id == cid, Rep.status == "active")).all()
+    per_rep = dict(session.execute(select(Visit.rep_id, func.count(Visit.id))
+                                   .where(Visit.company_id == cid, Visit.visited_at >= today).group_by(Visit.rep_id)).all())
+    return {
+        "visits_today": sum(per_rep.values()),
+        "calls_today": session.scalar(select(func.count(Call.id)).where(Call.company_id == cid, Call.created_at >= today)),
+        "open_promises": len(open_promises), "overdue_promises": len(overdue),
+        "stock_outs_week": session.scalar(select(func.count(StockOut.id)).join(Visit)
+                                          .where(Visit.company_id == cid, StockOut.created_at >= week)),
+        "needs_review": sum(1 for v in review if v.unmatched),
+        "reps_today": [{"id": r.id, "name": r.name, "visits": per_rep.get(r.id, 0)} for r in reps],
+        "silent_reps": [r.name for r in reps_without_visits_today(session, cid)],
+        **insights(session, cid, reps),
+        "recent_calls": [{"id": c.id, "status": c.status, "rep": c.rep.name if c.rep else c.rep_phone,
+                          "direction": c.direction, "call_type": c.call_type, "duration_s": c.duration_s,
+                          "note": c.process_note, "visit_id": c.visit.id if c.visit else None,
+                          "created_at": _iso(c.created_at)} for c in calls],
+    }
+
+
+TREND_DAYS = 14
+
+
+def insights(session, cid, reps):
+    """Chart data for the overview: visits per local day, per rep this week, top products and stock-outs."""
+    since = start_of_local_day_utc() - timedelta(days=TREND_DAYS - 1)
+    month = utcnow() - timedelta(days=30)
+    week = utcnow() - timedelta(days=7)
+    recent = session.scalars(select(Visit).where(Visit.company_id == cid, Visit.visited_at >= month)).all()
+    by_day = Counter(local_date(v.visited_at) for v in recent if v.visited_at >= since)
+    first = local_date(since)
+    trend = [{"date": (first + timedelta(days=i)).isoformat(), "visits": by_day.get(first + timedelta(days=i), 0)}
+             for i in range(TREND_DAYS)]
+    weekly = Counter(v.rep_id for v in recent if v.visited_at >= week)
+    products = Counter(p for v in recent for p in set(v.products_discussed or []) | {item_name(i) for i in v.items})
+    stockouts = Counter(item_name(s) for v in recent for s in v.stock_outs)
+    return {
+        "trend": trend,
+        "leaderboard": sorted(({"id": r.id, "name": r.name, "visits": weekly.get(r.id, 0)} for r in reps),
+                              key=lambda r: -r["visits"]),
+        "top_products": [{"name": n, "count": c} for n, c in products.most_common(6)],
+        "top_stockouts": [{"name": n, "count": c} for n, c in stockouts.most_common(6)],
+    }
+
+
+def _parse_day(value, end=False):
+    """'2026-10-29' (a local date) -> naive UTC bound for that day."""
+    day = datetime.fromisoformat(value).replace(tzinfo=TZ)
+    if end:
+        day += timedelta(days=1)
+    return day.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+
+
+@router.get("/visits")
+def list_visits(rep_id: int | None = None, doctor_id: int | None = None, needs_review: bool = False, limit: int = 500,
+                area: str | None = None, date_from: str | None = None, date_to: str | None = None,
+                user: User = Depends(current_user), session: Session = Depends(get_session)):
+    q = select(Visit).where(Visit.company_id == user.company_id)
+    if rep_id:
+        q = q.where(Visit.rep_id == rep_id)
+    if doctor_id:
+        q = q.where(Visit.doctor_id == doctor_id)
+    if area:
+        q = q.where(func.lower(Visit.area) == area.lower())
+    try:
+        if date_from:
+            q = q.where(Visit.visited_at >= _parse_day(date_from))
+        if date_to:
+            q = q.where(Visit.visited_at < _parse_day(date_to, end=True))
+    except ValueError:
+        raise HTTPException(422, "dates must be YYYY-MM-DD")
+    visits = session.scalars(q.order_by(Visit.visited_at.desc()).limit(limit)).all()
+    return [visit_json(v) for v in visits if v.unmatched or not needs_review]
+
+
+@router.get("/visits/{visit_id}")
+def get_visit(visit_id: int, user: User = Depends(current_user), session: Session = Depends(get_session)):
+    return visit_json(_visit(session, user, visit_id), full=True)
+
+
+@router.get("/doctors/{doctor_id}")
+def get_doctor(doctor_id: int, user: User = Depends(current_user), session: Session = Depends(get_session)):
+    d = session.get(Doctor, doctor_id)
+    if d is None or d.company_id != user.company_id:
+        raise HTTPException(404, "no such doctor")
+    visits = session.scalars(select(Visit).where(Visit.doctor_id == d.id).order_by(Visit.visited_at.desc())).all()
+    return {"id": d.id, "name": d.name, "area": d.area, "speciality": d.speciality,
+            "rep": d.assigned_rep.name if d.assigned_rep else None, "brief": doctor_brief(session, d),
+            "visits": [visit_json(v) for v in visits]}
+
+
+@router.get("/promises")
+def list_promises(status: str = "open", user: User = Depends(current_user), session: Session = Depends(get_session)):
+    q = select(Promise).join(Visit).where(Visit.company_id == user.company_id)
+    if status in ("open", "done"):
+        q = q.where(Promise.status == status)
+    rows = session.scalars(q.order_by(Promise.created_at)).all()
+    return [{"id": p.id, "text": p.text, "status": p.status, "created_at": _iso(p.created_at),
+             "closed_at": _iso(p.closed_at), "age_days": (utcnow() - p.created_at).days,
+             "overdue": p.status == "open" and (utcnow() - p.created_at).days > OVERDUE_DAYS,
+             "doctor": p.doctor.name if p.doctor else p.visit.doctor_raw, "doctor_id": p.doctor_id,
+             "rep": p.visit.rep.name if p.visit.rep else None, "visit_id": p.visit_id} for p in rows]
+
+
+class PromiseUpdate(BaseModel):
+    status: str
+
+
+@router.patch("/promises/{promise_id}")
+def update_promise(promise_id: int, body: PromiseUpdate, user: User = Depends(current_user),
+                   session: Session = Depends(get_session)):
+    p = session.get(Promise, promise_id)
+    if p is None or p.visit.company_id != user.company_id or body.status not in ("open", "done"):
+        raise HTTPException(404, "no such promise")
+    p.status = body.status
+    p.closed_at = utcnow() if body.status == "done" else None
+    session.commit()
+    return {"id": p.id, "status": p.status}
+
+
+@router.get("/stockouts")
+def list_stockouts(days: int = 14, user: User = Depends(current_user), session: Session = Depends(get_session)):
+    """Stock-outs grouped by product, with the chemists and areas they were seen in. A doctor
+    in the same area as a stock-out is prescribing into an empty shelf."""
+    since = utcnow() - timedelta(days=days)
+    rows = session.scalars(select(StockOut).join(Visit).where(Visit.company_id == user.company_id,
+                                                              StockOut.created_at >= since)
+                           .order_by(StockOut.created_at.desc())).all()
+    groups = {}
+    for s in rows:
+        name = item_name(s)
+        g = groups.setdefault(name, {"product": name, "reports": 0, "chemists": {}, "areas": set(), "last_seen": None})
+        g["reports"] += 1
+        chem = s.chemist.name if s.chemist else (s.visit.chemist_raw or "unknown chemist")
+        area = s.chemist.area if s.chemist else s.visit.area
+        g["chemists"][chem] = area
+        if area:
+            g["areas"].add(area)
+        g["last_seen"] = max(filter(None, [g["last_seen"], _iso(s.created_at)]))
+    doctors = session.scalars(select(Doctor).where(Doctor.company_id == user.company_id)).all()
+    out = []
+    for g in groups.values():
+        affected = [d.name for d in doctors if d.area in g["areas"]]
+        out.append({"product": g["product"], "reports": g["reports"], "last_seen": g["last_seen"],
+                    "chemists": [{"name": n, "area": a} for n, a in g["chemists"].items()],
+                    "areas": sorted(g["areas"]), "doctors_nearby": affected})
+    return sorted(out, key=lambda g: -g["reports"])
+
+
+# ---- review queue: names the matcher could not place --------------------------------------
+
+@router.get("/review")
+def review_queue(user: User = Depends(current_user), session: Session = Depends(get_session)):
+    visits = session.scalars(select(Visit).where(Visit.company_id == user.company_id)
+                             .order_by(Visit.visited_at.desc())).all()
+    resolver = Resolver(session, user.company_id)
+    items = []
+    for v in visits:
+        for u in v.unmatched or []:
+            options = resolver.names.get(u["kind"], [])
+            items.append({"visit_id": v.id, "visited_at": _iso(v.visited_at), "rep": v.rep.name if v.rep else None,
+                          "kind": u["kind"], "heard": u["heard"], "suggestion": u.get("suggestion"), "options": options})
+    return items
+
+
+class Resolution(BaseModel):
+    visit_id: int
+    kind: str
+    heard: str
+    target: str | None = None  # canonical name; None = dismiss (keep as typed)
+
+
+@router.post("/review/resolve")
+def resolve(body: Resolution, user: User = Depends(current_user), session: Session = Depends(get_session)):
+    """Link the heard name to the right record on this visit, and remember it for next time."""
+    v = _visit(session, user, body.visit_id)
+    cid = user.company_id
+    if body.target:
+        model = {"product": Product, "doctor": Doctor, "chemist": Chemist}.get(body.kind)
+        if body.kind == "area":
+            v.area = body.target
+        else:
+            obj = session.scalar(select(model).where(model.company_id == cid, model.name == body.target)) if model else None
+            if obj is None:
+                raise HTTPException(422, f"{body.target} is not in your {body.kind} list")
+            if body.kind == "doctor" and v.doctor_raw == body.heard:
+                v.doctor = obj
+                v.area = v.area or obj.area
+                for p in v.promises:
+                    p.doctor_id = obj.id
+            elif body.kind == "chemist" and v.chemist_raw == body.heard:
+                v.chemist = obj
+                for s in v.stock_outs:
+                    s.chemist_id = obj.id
+            elif body.kind == "product":
+                for i in [*v.items, *v.stock_outs]:
+                    if i.product_raw == body.heard:
+                        i.product_id = obj.id
+                v.products_discussed = [body.target if p == body.heard else p for p in v.products_discussed]
+        learn_alias(session, cid, body.kind, body.heard, body.target)
+    v.unmatched = [u for u in v.unmatched if not (u["kind"] == body.kind and u["heard"] == body.heard)]
+    session.commit()
+    return visit_json(v)
+
+
+# ---- reps and handover -------------------------------------------------------------------
+
+@router.get("/reps")
+def list_reps(user: User = Depends(current_user), session: Session = Depends(get_session)):
+    cid = user.company_id
+    reps = session.scalars(select(Rep).where(Rep.company_id == cid).order_by(Rep.status, Rep.name)).all()
+    week = utcnow() - timedelta(days=7)
+    counts = dict(session.execute(select(Visit.rep_id, func.count(Visit.id))
+                                  .where(Visit.company_id == cid, Visit.visited_at >= week).group_by(Visit.rep_id)).all())
+    doctors = dict(session.execute(select(Doctor.assigned_rep_id, func.count(Doctor.id))
+                                   .where(Doctor.company_id == cid).group_by(Doctor.assigned_rep_id)).all())
+    last_out = {}
+    for o in session.scalars(select(OutboundCall).where(OutboundCall.company_id == cid).order_by(OutboundCall.created_at)):
+        last_out[o.rep_id] = {"reason": o.reason, "at": _iso(o.created_at), "error": o.error}
+    return [{"id": r.id, "name": r.name, "phone": r.phone, "area": r.area, "manager": r.manager, "status": r.status,
+             "visits_7d": counts.get(r.id, 0), "doctors": doctors.get(r.id, 0), "last_outbound": last_out.get(r.id)}
+            for r in reps]
+
+
+class Handover(BaseModel):
+    to_rep_id: int
+
+
+@router.post("/reps/{rep_id}/handover")
+def handover(rep_id: int, body: Handover, user: User = Depends(current_user), session: Session = Depends(get_session)):
+    """A rep leaves: their doctors (and with them the full history, open promises and briefings)
+    move to the new rep. Nothing is copied, because everything is keyed by doctor."""
+    old, new = session.get(Rep, rep_id), session.get(Rep, body.to_rep_id)
+    if not old or not new or old.company_id != user.company_id or new.company_id != user.company_id or old.id == new.id:
+        raise HTTPException(404, "pick two different reps from your team")
+    doctors = session.scalars(select(Doctor).where(Doctor.assigned_rep_id == old.id)).all()
+    for d in doctors:
+        d.assigned_rep_id = new.id
+    old.status = "left"
+    for area in old.areas:
+        if area not in new.areas:
+            new.area = "; ".join([*new.areas, area])
+    session.commit()
+    open_promises = session.scalar(select(func.count(Promise.id)).where(
+        Promise.status == "open", Promise.doctor_id.in_([d.id for d in doctors]))) if doctors else 0
+    return {"moved_doctors": len(doctors), "open_promises": open_promises, "to": new.name}
+
+
+class RepStatus(BaseModel):
+    status: str
+
+
+@router.patch("/reps/{rep_id}")
+def update_rep(rep_id: int, body: RepStatus, user: User = Depends(current_user), session: Session = Depends(get_session)):
+    rep = session.get(Rep, rep_id)
+    if rep is None or rep.company_id != user.company_id or body.status not in ("active", "left"):
+        raise HTTPException(404, "no such rep")
+    rep.status = body.status
+    session.commit()
+    return {"id": rep.id, "status": rep.status}
+
+
+@router.get("/doctors")
+def list_doctors(user: User = Depends(current_user), session: Session = Depends(get_session)):
+    cid = user.company_id
+    doctors = session.scalars(select(Doctor).where(Doctor.company_id == cid).order_by(Doctor.name)).all()
+    last = dict(session.execute(select(Visit.doctor_id, func.max(Visit.visited_at))
+                                .where(Visit.company_id == cid).group_by(Visit.doctor_id)).all())
+    open_ = dict(session.execute(select(Promise.doctor_id, func.count(Promise.id))
+                                 .where(Promise.status == "open").group_by(Promise.doctor_id)).all())
+    return [{"id": d.id, "name": d.name, "area": d.area, "speciality": d.speciality,
+             "rep": d.assigned_rep.name if d.assigned_rep else None, "last_visit": _iso(last.get(d.id)),
+             "open_promises": open_.get(d.id, 0)} for d in doctors]
