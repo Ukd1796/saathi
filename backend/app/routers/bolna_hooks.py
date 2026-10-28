@@ -13,7 +13,7 @@ from ..briefing import doctor_brief
 from ..db import get_session
 from ..ingest import find_rep, process_payload
 from ..models import Company, Doctor, Promise, Rep
-from ..names import Resolver, parse_items
+from ..names import Resolver, parse_items, spoken
 from ..outbound import maybe_callback
 
 log = logging.getLogger("saathi.bolna")
@@ -109,10 +109,10 @@ async def resolve_names(request: Request, company: str = "", authorization: str 
     lines = []
     for r in results:
         if r["confidence"] == "high":
-            lines.append(f'{r["kind"]} "{r["heard"]}" = {r["best"]} (high: use it)')
+            lines.append(f'{r["kind"]} "{r["heard"]}" = {r["best"]}, say "{spoken(r["best"])}" (high: use it)')
         elif r["confidence"] == "medium":
             alts = f' (or {", ".join(r["alternatives"])})' if r["alternatives"] else ""
-            lines.append(f'{r["kind"]} "{r["heard"]}" = probably {r["best"]}{alts} (medium: confirm with the MR)')
+            lines.append(f'{r["kind"]} "{r["heard"]}" = probably {r["best"]}, say "{spoken(r["best"])}"{alts} (medium: confirm with the MR)')
         else:
             lines.append(f'{r["kind"]} "{r["heard"]}" = no clear match (low: ask the MR to repeat it)')
     return {"results": results, "message": "\n".join(lines)}
@@ -132,4 +132,4 @@ async def doctor_brief_tool(request: Request, company: str = "", authorization: 
         return {"message": f"Not sure which doctor. Ask the MR: {options}?"}
     doctor = session.scalar(select(Doctor).where(Doctor.company_id == comp.id, Doctor.name == m.best))
     brief = doctor_brief(session, doctor)
-    return {"doctor": brief["doctor"], "message": f'{brief["doctor"]} ({brief["area"] or "area unknown"}): {brief["summary"]}'}
+    return {"doctor": brief["doctor"], "message": f'{brief["doctor"]} ({brief["area"] or "area unknown"}): {brief["spoken"]}'}

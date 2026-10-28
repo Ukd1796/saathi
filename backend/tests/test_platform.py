@@ -44,7 +44,8 @@ def test_tools_need_the_company_token(client, company):
 def test_doctor_brief_tool_and_caller_lookup(client, company):
     webhook(client, company, PAYLOAD)
     msg = tool(client, company, "doctor_brief", doctor="Mehta", from_number=ASHA).json()["message"]
-    assert "Dr Mehta" in msg and "4 of Telma 40" in msg and "Cardivas clinical study" in msg
+    assert "Dr Mehta" in msg and "four of Telma forty." in msg and "Cardivas clinical study" in msg
+    assert "Only if the MR asks about chemists or stock: Out of stock nearby: Cardivas" in msg
     assert "Cardivas at Sharma Medical" in msg  # stock-out at a chemist in the doctor's area
     caller = client.get(f"/bolna/caller?company={company.id}&contact_number={ASHA}",
                         headers={"Authorization": f"Bearer {company.tool_token}"}).json()

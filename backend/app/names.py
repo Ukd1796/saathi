@@ -72,6 +72,37 @@ def spoken_numbers(text):
     return NUMBER_RUN.sub(lambda m: _run_to_digits(m.group(0)) + " ", text).strip()
 
 
+WORDS = {v: k for k, v in UNITS.items()} | {v: k for k, v in TENS.items()}
+
+
+def _say_number(n):
+    """40 -> 'forty', 625 -> 'six hundred twenty five', 6.25 -> 'six point two five'."""
+    whole, _, frac = n.partition(".")
+    i = int(whole)
+    if i >= 10000:
+        out = " ".join(WORDS[int(d)] for d in whole)
+    else:
+        parts = []
+        if i >= 1000:
+            parts.append(WORDS[i // 1000] + " thousand")
+            i %= 1000
+        if i >= 100:
+            parts.append(WORDS[i // 100] + " hundred")
+            i %= 100
+        if i >= 20:
+            parts.append(WORDS[i - i % 10] + (" " + WORDS[i % 10] if i % 10 else ""))
+        elif i or not parts:
+            parts.append(WORDS[i])
+        out = " ".join(parts)
+    return out + (" point " + " ".join(WORDS[int(d)] for d in frac) if frac else "")
+
+
+def spoken(text):
+    """What the voice should say: 'Telma 40' -> 'Telma forty', so digits never reach the speech engine."""
+    text = re.sub(r"\d+(?:\.\d+)?", lambda m: f" {_say_number(m.group(0))} ", text)
+    return re.sub(r"\s+([.,;:!?])", r"\1", re.sub(r"\s+", " ", text)).strip()
+
+
 def key(text, person=False):
     """Normalised form used for exact and alias lookups: lowercase letters and digits only."""
     text = to_latin(text)

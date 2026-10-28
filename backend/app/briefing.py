@@ -6,6 +6,7 @@ from datetime import timedelta
 from sqlalchemy import select
 
 from .models import Chemist, Doctor, Promise, StockOut, Visit, utcnow
+from .names import spoken
 
 OVERDUE_DAYS = 7
 STOCKOUT_DAYS = 14
@@ -52,12 +53,17 @@ def doctor_brief(session, doctor: Doctor) -> dict:
     for p in promises:
         overdue = (utcnow() - p.created_at).days > OVERDUE_DAYS
         lines.append(f"{'OVERDUE promise' if overdue else 'Open promise'} ({_ago(p.created_at)}): {p.text}")
-    if stock_outs:
-        lines.append("Out of stock nearby: " + ", ".join(f"{s['product']} at {s['chemist']}" for s in stock_outs) + ".")
+    stock_line = ("Out of stock nearby: " + ", ".join(f"{s['product']} at {s['chemist']}" for s in stock_outs) + "."
+                  if stock_outs else "")
+    # The voice version keeps chemist news back unless the rep asks, and has no digits to misread.
+    voice = spoken(" ".join(lines))
+    if stock_line:
+        voice += f" Only if the MR asks about chemists or stock: {spoken(stock_line)}"
 
     return {
         "doctor": doctor.name, "area": doctor.area, "speciality": doctor.speciality,
-        "summary": " ".join(lines),
+        "summary": " ".join(lines + ([stock_line] if stock_line else [])),
+        "spoken": voice,
         "visits": [{"id": v.id, "visited_at": v.visited_at.isoformat(), "rep": v.rep.name if v.rep else None,
                     "feedback": v.feedback} for v in visits],
         "open_promises": [{"id": p.id, "text": p.text, "created_at": p.created_at.isoformat(),
