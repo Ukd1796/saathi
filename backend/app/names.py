@@ -205,6 +205,12 @@ class Resolver:
         if self.mine and kind in ("doctor", "area"):
             scored = sorted(((s + (0.05 if n in self.mine else 0), n) for s, n in scored), reverse=True)
         scored = [(min(s, 1.0), n) for s, n in scored if s > 0.3]
+        if not scored or scored[0][0] < MEDIUM:
+            near = self._same_name_other_strength(heard, kind)
+            if near:
+                m.best, m.confidence, m.score = near, "medium", MEDIUM
+                m.hint = f"heard a different strength; your list has {near}"
+                return m
         if not scored:
             return m
         (top, best), runner = scored[0], (scored[1][0] if len(scored) > 1 else 0)
@@ -218,6 +224,15 @@ class Resolver:
             m.best = None
             m.alternatives = [n for _, n in scored[:2]]
         return m
+
+    def _same_name_other_strength(self, heard, kind):
+        """'Thyronorm 500' when the list only has Thyronorm 50: the name is clear, the number isn't.
+        Offer the one product with that name so the agent can ask, instead of making the rep repeat."""
+        if kind != "product" or not _numbers(to_latin(heard)):
+            return None
+        bare = key(re.sub(r"[\d.]+", "", to_latin(heard)))
+        same = [n for n in self.names["product"] if _numbers(n) and key(re.sub(r"[\d.]+", "", n)) == bare]
+        return same[0] if len(same) == 1 else None
 
     def resolve_all(self, items):
         """Resolve a call's names together, so they help each other: when the area is unclear but the

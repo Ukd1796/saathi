@@ -14,7 +14,9 @@ def test_resolver_on_real_misheard_names(client, company):
         assert r.resolve("हदापसर", "area").confidence == "high"
         assert r.resolve("चार दिवस", "product").best == "Cardivas"   # the call that became "four days"
         assert r.resolve("Telma", "product").confidence == "medium"  # Telma 40 or Telma H: confirm
-        assert r.resolve("Telma 80", "product").best is None         # strength must agree
+        m = r.resolve("Telma 80", "product")  # strength must agree: never taken as Telma 40, only asked about
+        assert m.confidence == "medium" and m.best == "Telma 40" and "different strength" in m.hint
+        assert r.resolve("Thyronorm 500", "product").best == "Thyronorm 50"
         assert r.resolve("पाटिल", "doctor").best == "Dr Patil"
         assert r.resolve("Exezle 500", "product").confidence == "low"  # don't guess: ask again
         assert r.resolve("telma forty", "product").as_dict()["confidence"] == "high"  # strength said as a word

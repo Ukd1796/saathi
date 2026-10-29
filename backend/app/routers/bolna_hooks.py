@@ -119,8 +119,11 @@ async def resolve_names(request: Request, company: str = "", authorization: str 
             lines.append(f'{r["kind"]} "{r["heard"]}" = {r["best"]}, say "{spoken(r["best"])}" (high: use it)')
         elif r["confidence"] == "medium":
             alts = f' (or {", ".join(r["alternatives"])})' if r["alternatives"] else ""
-            why = f" ({hints[i]})" if i in hints else ""
-            lines.append(f'{r["kind"]} "{r["heard"]}" = probably {r["best"]}{why}, say "{spoken(r["best"])}"{alts} (medium: confirm with the MR in one short question)')
+            if i in hints:
+                lines.append(f'{r["kind"]} "{r["heard"]}" = probably {r["best"]} ({hints[i]}), say "{spoken(r["best"])}" '
+                             f'(medium, must ask: confirm it with the MR in one short question)')
+            else:
+                lines.append(f'{r["kind"]} "{r["heard"]}" = probably {r["best"]}, say "{spoken(r["best"])}"{alts} (medium)')
         else:
             lines.append(f'{r["kind"]} "{r["heard"]}" = no clear match (low: ask the MR to repeat it)')
     return {"results": results, "message": "\n".join(lines)}

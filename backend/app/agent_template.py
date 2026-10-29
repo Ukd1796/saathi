@@ -11,6 +11,9 @@ from .models import Chemist, Company, Doctor, Product, Rep
 MAX_PROMPT_NAMES = 300  # beyond this, resolve_names and the per-rep list carry the load
 MAX_KEYWORDS = 50  # Bolna's transcriber keyword limit
 
+# A debrief with a couple of re-asked names runs past 3 minutes; ending mid-read-back loses it.
+MAX_CALL_SECONDS = 300
+
 # Voices to compare on real calls; pick one with the VOICE env var and re-sync the agent.
 # Sarvam's "enhi" voices are trained on Hindi-English code-mixed speech, i.e. how MRs talk.
 VOICES = {
@@ -147,7 +150,7 @@ def agent_config(session, company: Company) -> dict:
                     "api_tools": api_tools(company),
                 },
                 "task_config": {
-                    "call_terminate": 180, "hangup_after_silence": 15, "hangup_after_LLMCall": True,
+                    "call_terminate": MAX_CALL_SECONDS, "hangup_after_silence": 15, "hangup_after_LLMCall": True,
                     "call_cancellation_prompt": HANGUP_PROMPT, "call_hangup_message": HANGUP_MESSAGE,
                     "incremental_delay": 300, "number_of_words_for_interruption": 3,
                     "check_if_user_online": True, "trigger_user_online_message_after": 10,

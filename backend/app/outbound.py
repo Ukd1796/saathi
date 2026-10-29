@@ -191,7 +191,8 @@ def cut_off(call: Call) -> bool:
     if call.call_type == "briefing" or call.rep is None or (call.duration_s or 0) < 15:
         return False
     raw = call.raw or {}
-    if (raw.get("termination_reason") or "") not in ("user_hung_up", "call-disconnected", "network_error"):
+    if (raw.get("termination_reason") or "") not in ("user_hung_up", "call-disconnected", "network_error",
+                                                     "max_duration_reached"):
         return False
     agent_lines = [l for l in (call.transcript or "").splitlines() if l.startswith("assistant:")]
     user_lines = [l for l in (call.transcript or "").splitlines() if l.startswith("user:")]
