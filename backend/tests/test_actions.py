@@ -171,3 +171,11 @@ def test_promise_that_is_not_material_makes_no_request(client, company):
     p["extracted_data"]["Visit"].update(promises="Call him back on Friday", materials="none")
     webhook(client, company, p)
     assert [i["kind"] for i in client.get("/api/actions").json()] == ["stockout"]
+
+
+def test_a_word_saathi_could_not_place_is_never_learnt(client, company):
+    from conftest import tool
+    tool(client, company, "resolve_names", names="doctor: बजट रिपोर्ट; doctor: Mehtaa", from_number=ASHA)
+    webhook(client, company, PAYLOAD)  # confirmed visit to Dr Mehta
+    r = tool(client, company, "resolve_names", names="doctor: बजट रिपोर्ट", from_number=ASHA).json()["results"][0]
+    assert r["best"] is None  # a garbled "visit report" must not become Dr Mehta

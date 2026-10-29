@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .models import Call, Chemist, Doctor, Product, Promise, Rep, StockOut, ToolEvent, Visit, VisitItem, utcnow
-from .names import Resolver, key, learn_alias
+from .names import Resolver, learn_alias
 from .actions import on_visit
 from .outbound import cut_off
 
@@ -206,13 +206,9 @@ def learn_from_call(session, visit: Visit):
     }
     events = [e for e in call_events(session, visit.call) if e.tool == "resolve_names" and e.heard]
     for kind, answers in final.items():
-        unsure = [e for e in events if e.kind == kind and e.confidence != "high"]
-        unknown = [e for e in unsure if not e.best]
-        for e in unsure:
-            if e.best and e.best in answers:
-                target = e.best  # "Dr Rao?" -> "haan": the guess was right
-            elif not e.best and len(unknown) == 1 and len(answers) == 1 and len(key(e.heard)) >= 3:
-                target = answers[0]  # one unclear name, one confirmed answer of that kind
-            else:
-                continue
-            learn_alias(session, visit.company_id, kind, e.heard, target)
+        for e in events:
+            # Only a guess that turned out right is learnt ("Dr Rao?" -> "haan"). A word Saathi couldn't
+            # place at all is never tied to the confirmed name: on 29 Oct "बजट रिपोर्ट" (a garbled
+            # "visit report") got learnt as Dr Kulkarni that way.
+            if e.kind == kind and e.confidence == "medium" and e.best in answers:
+                learn_alias(session, visit.company_id, kind, e.heard, e.best)
