@@ -3,12 +3,18 @@ lookup and extractions. The voice settings copy the hand-tuned prototype agent (
 900 ms, gpt-5.4-mini with no reasoning, 180 s cap) because those were fixed on real test calls.
 """
 
+import re
+
 from sqlalchemy import select
 
+from .names import spoken
 from .config import PUBLIC_BASE_URL, ROOT, TRANSCRIBER, VOICE
-from .models import Chemist, Company, Doctor, Product, Rep
+from .models import Chemist, Company, Doctor, Product, Rep, Visit, utcnow
 
-MAX_PROMPT_NAMES = 300  # beyond this, resolve_names and the per-rep list carry the load
+# The prompt carries only the names most likely in a call; resolve_names searches the full lists.
+# A shorter prompt is also a faster first word from the model.
+PROMPT_LIMITS = {"products": 40, "chemists": 20, "areas": 40}
+USAGE_DAYS = 90
 MAX_KEYWORDS = 50  # Bolna's transcriber keyword limit
 
 # A debrief with a couple of re-asked names runs past 3 minutes; ending mid-read-back loses it.
@@ -70,26 +76,69 @@ EXTRACTIONS = [
     ("feedback", 'What did the doctor say about the products (feedback or objections)? One sentence in English. Write "none" if nothing.'),
     ("promises", "What did the MR promise the doctor in this visit (e.g. bring samples, share a study, call back)? One short English sentence per promise, separated by semicolons, keeping any timing the MR gave (e.g. \"Bring the clinical study next week\"). Speech-to-text may garble common words: \"netsuvic\" is most likely \"next week\", so never turn a garbled word into a product or study name. Never include gifts, money or favours. Only promises the MR explicitly said. Never infer or add follow-ups that were not said. Write \"none\" if nothing."),
     ("promises_done", 'Did the MR say that an earlier promise to this doctor has now been completed (e.g. "study de diya")? One short English sentence per completed promise, separated by semicolons. Write "none" if nothing.'),
+    ("readback_confirmed", 'Did the MR say yes ("haan", "sahi hai", "yes", "correct") to Saathi\'s full read-back of the visit, with no correction left open? Answer exactly "yes" or "no".'),
+    ("materials", 'Which of the promises are about handing the doctor material: a study, literature, a leaflet, samples, a chart, an invite or similar? Copy each such promise exactly as you wrote it in the promises field, separated by semicolons. Write "none" if none.'),
 ]
 
 
+def _by_use(names, counts):
+    """Most used in recent visits first, then alphabetical."""
+    return sorted(names, key=lambda n: (-counts.get(n, 0), n))
+
+
 def company_names(session, company_id):
-    products = list(session.scalars(select(Product.name).where(Product.company_id == company_id).order_by(Product.name)))
-    doctors = list(session.scalars(select(Doctor).where(Doctor.company_id == company_id).order_by(Doctor.name)))
-    chemists = list(session.scalars(select(Chemist).where(Chemist.company_id == company_id).order_by(Chemist.name)))
+    from collections import Counter
+    from datetime import timedelta
+    since = utcnow() - timedelta(days=USAGE_DAYS)
+    recent = session.scalars(select(Visit).where(Visit.company_id == company_id, Visit.visited_at >= since)).all()
+    used = Counter()
+    for v in recent:
+        used.update(set(v.products_discussed or []) | {i.product.name for i in v.items if i.product})
+        if v.chemist:
+            used[v.chemist.name] += 1
+        if v.doctor:
+            used[v.doctor.name] += 1
+    products = _by_use(session.scalars(select(Product.name).where(Product.company_id == company_id)), used)
+    doctors = sorted(session.scalars(select(Doctor).where(Doctor.company_id == company_id)), key=lambda d: (-used[d.name], d.name))
+    chemists = sorted(session.scalars(select(Chemist).where(Chemist.company_id == company_id)), key=lambda c: (-used[c.name], c.name))
     areas = {d.area for d in doctors} | {c.area for c in chemists}
     for r in session.scalars(select(Rep).where(Rep.company_id == company_id)):
         areas |= set(r.areas)
     return {"products": products, "doctors": [d.name for d in doctors],
-            "chemists": [c.name for c in chemists], "areas": sorted(a for a in areas if a)}
+            "chemists": [c.name for c in chemists], "areas": sorted(a for a in areas if a),
+            "doctor_areas": {d.name: d.area for d in doctors}, "chemist_areas": {c.name: c.area for c in chemists}}
+
+
+def examples(names: dict) -> dict:
+    """Example names for the prompt, taken from this company's own lists so no company's agent is
+    nudged towards another company's doctors or products. Neutral wording when a list is empty."""
+    doctors = [d for d in names["doctors"] if names["doctor_areas"].get(d)] or names["doctors"]
+    doctor = doctors[0] if doctors else "Dr Kumar"
+    area = names["doctor_areas"].get(doctor) or (names["areas"][0] if names["areas"] else "the area")
+    chemists = names["chemists"]
+    chemist = next((c for c in chemists if names["chemist_areas"].get(c) == area), chemists[0] if chemists else "the chemist")
+    products = names["products"]
+    with_strength = [p for p in products if re.search(r"\d", p)] or products or ["the product"]
+    product, other = with_strength[0], (with_strength[1:] or products[1:] or with_strength)[0]
+    stock = next((p for p in products if p not in (product, other)), other)
+    # Two products sharing a name ("Telma 40" / "Telma H") are the real "which one?" case; else any two.
+    by_base = {}
+    for p in products:
+        by_base.setdefault(p.split()[0].lower(), []).append(p)
+    pair = next((v[:2] for v in by_base.values() if len(v) > 1), [product, other])
+    return {"EX_DOCTOR": doctor, "EX_AREA": area, "EX_CHEMIST": chemist, "EX_STOCK": stock,
+            "EX_PRODUCT": product, "EX_PRODUCT_SAY": spoken(product), "EX_OTHER_SAY": spoken(other),
+            "EX_PAIR_SAY": f"{spoken(pair[0])} ya {spoken(pair[1])}"}
 
 
 def build_prompt(company: Company, names: dict) -> str:
     text = (ROOT / "templates" / "agent_prompt.md").read_text()
-    for marker, values in (("PRODUCTS", names["products"]), ("DOCTORS", names["doctors"]),
-                           ("CHEMISTS", names["chemists"]), ("AREAS", names["areas"])):
-        shown = values[:MAX_PROMPT_NAMES]
-        text = text.replace(f"[[{marker}]]", ", ".join(shown) + (" (and more)" if len(values) > len(shown) else "") or "none")
+    for kind, limit in PROMPT_LIMITS.items():
+        values = names[kind]
+        shown = values[:limit]
+        text = text.replace(f"[[{kind.upper()}]]", ", ".join(shown) + (" (and more)" if len(values) > len(shown) else "") or "none")
+    for marker, value in examples(names).items():
+        text = text.replace(f"[[{marker}]]", value)
     followups = (' If the MR gave a next-visit day, add "Us din subah main aapko briefing ke liye call karungi." / '
                  '"I\'ll call you that morning with a briefing." If they reported a stock-out, add "Stock-out ki khabar '
                  'manager tak pahunch jayegi." / "Your manager will hear about the stock-out."') if company.auto_followup else ""

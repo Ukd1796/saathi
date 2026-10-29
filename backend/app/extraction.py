@@ -9,7 +9,7 @@ import re
 
 FIELDS = ["doctor_name", "area", "products_discussed", "samples", "orders",
           "chemist_name", "stock_outs", "next_visit", "feedback", "promises",
-          "call_type", "promises_done"]
+          "call_type", "promises_done", "readback_confirmed", "materials"]
 NONE_WORDS = {"", "none", "na", "n/a", "null", "nil", "no", "nahi", "nothing",
               "koi nahi", "kahi nahi", "-", "not mentioned", "not applicable"}
 DEVANAGARI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
@@ -111,7 +111,18 @@ def parse_visit(extracted):
         "feedback": text_or_none(raw.get("feedback")),
         "promises": split_sentences(raw.get("promises")),
         "promises_done": split_sentences(raw.get("promises_done")),
+        "materials": split_sentences(raw.get("materials")),
     }
+
+
+def readback_confirmed(extracted):
+    """True / False as the extraction model judged it, or None when the field isn't there."""
+    raw = {}
+    find_fields(extracted, raw)
+    value = text_or_none(raw.get("readback_confirmed"))
+    if value is None and "readback_confirmed" not in raw:
+        return None
+    return (value or "").strip().lower().startswith("y")
 
 
 def split_sentences(value):

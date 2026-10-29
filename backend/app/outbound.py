@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 
 from . import bolna
 from .config import TIMEZONE
-from .models import Call, Company, OutboundCall, Rep, ScheduledCall, Visit, utcnow
+from .models import Call, Company, Doctor, OutboundCall, Promise, Rep, ScheduledCall, Visit, utcnow
 
 log = logging.getLogger("saathi.outbound")
 CALLBACK_GAP = timedelta(hours=1)
@@ -34,6 +34,24 @@ def start_of_local_day_utc():
     return start.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
 
+MY_DOCTORS_LIMIT = 30  # the rep's doctors in the prompt, most recently visited first
+
+
+def rep_context(session, rep: Rep) -> dict:
+    """What the agent knows about this rep before the call starts: their own doctors and the
+    promises still open with them. The same for calls the rep makes and calls Saathi makes."""
+    doctors = session.scalars(select(Doctor).where(Doctor.company_id == rep.company_id)).all()
+    mine = [d for d in doctors if d.assigned_rep_id == rep.id or (d.area and d.area in rep.areas)]
+    last = dict(session.execute(select(Visit.doctor_id, func.max(Visit.visited_at))
+                                .where(Visit.rep_id == rep.id).group_by(Visit.doctor_id)).all())
+    mine.sort(key=lambda d: (last.get(d.id) is None, -(last[d.id].timestamp() if d.id in last else 0), d.name))
+    mine = mine[:MY_DOCTORS_LIMIT]
+    open_ = session.scalars(select(Promise).where(Promise.status == "open",
+                                                  Promise.doctor_id.in_([d.id for d in mine]))).all() if mine else []
+    return {"my_doctors": ", ".join(f"{d.name} ({d.area})" if d.area else d.name for d in mine) or "none listed",
+            "open_promises": "; ".join(f"{p.doctor.name}: {p.text}" for p in open_ if p.doctor) or "none"}
+
+
 def call_rep(session, company: Company, rep: Rep, reason: str, mode: str | None = None, notes: str = "") -> OutboundCall:
     row = OutboundCall(company_id=company.id, rep_id=rep.id, reason=reason)
     try:
@@ -41,7 +59,7 @@ def call_rep(session, company: Company, rep: Rep, reason: str, mode: str | None 
             raise bolna.BolnaError("create the voice agent first")
         res = bolna.make_call(company.bolna_agent_id, rep.phone,
                               user_data={"rep_name": rep.name, "mode": mode or MODES.get(reason, "inbound"),
-                                         "my_doctors": "", "open_promises": "", "resume_notes": notes},
+                                         "resume_notes": notes, **rep_context(session, rep)},
                               from_number=company.phone_number)
         row.execution_id = res.get("execution_id") or res.get("call_id")
     except bolna.BolnaError as exc:
@@ -181,22 +199,18 @@ def maybe_retry(session, call: Call):
 
 # ---- reports cut off before the read-back ---------------------------------------------------------
 
-CLOSED = re.compile(r"record ho gaya|रिकॉर्ड हो गया|it'?s recorded|baad mein call|बाद में call|call back later|"
-                    r"wrong number|galti ho gayi|गलती हो गई|dhanyavaad|धन्यवाद|thank you", re.I)
-
-
 def cut_off(call: Call) -> bool:
-    """The rep was mid-report and the line dropped: they hung up, the call ran long enough to have
-    started, and Saathi never got to its closing line."""
+    """The rep was mid-report and the line dropped: they hung up (or the call hit its time limit),
+    the call had started, and the extraction says the read-back was never confirmed."""
     if call.call_type == "briefing" or call.rep is None or (call.duration_s or 0) < 15:
         return False
     raw = call.raw or {}
     if (raw.get("termination_reason") or "") not in ("user_hung_up", "call-disconnected", "network_error",
                                                      "max_duration_reached"):
         return False
-    agent_lines = [l for l in (call.transcript or "").splitlines() if l.startswith("assistant:")]
+    from .extraction import readback_confirmed
     user_lines = [l for l in (call.transcript or "").splitlines() if l.startswith("user:")]
-    return bool(user_lines) and not any(CLOSED.search(l) for l in agent_lines[-2:])
+    return bool(user_lines) and readback_confirmed(call.extracted) is False
 
 
 def resume_notes(call: Call) -> str:

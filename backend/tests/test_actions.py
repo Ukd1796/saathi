@@ -64,6 +64,7 @@ def test_approve_material_and_handle_stockout(client, company):
 def test_promise_with_a_day_is_overdue_after_that_day(client, company):
     p = copy.deepcopy(PAYLOAD)
     p["extracted_data"]["Visit"]["promises"] = "Send the dosing chart on Monday"
+    p["extracted_data"]["Visit"]["materials"] = "Send the dosing chart on Monday"
     webhook(client, company, p)
     with client.Session() as s:
         promise = s.query(Promise).one()
@@ -163,3 +164,10 @@ def test_unclear_names_are_learnt_from_a_confirmed_call(client, company):
     webhook(client, company, PAYLOAD)  # the rep confirmed the read-back: Dr Mehta, Kothrud
     again = tool(client, company, "resolve_names", names="area: ओदमे", from_number=ASHA).json()["results"][0]
     assert (again["best"], again["confidence"]) == ("Kothrud", "high")  # learnt, no question next time
+
+
+def test_promise_that_is_not_material_makes_no_request(client, company):
+    p = copy.deepcopy(PAYLOAD)
+    p["extracted_data"]["Visit"].update(promises="Call him back on Friday", materials="none")
+    webhook(client, company, p)
+    assert [i["kind"] for i in client.get("/api/actions").json()] == ["stockout"]

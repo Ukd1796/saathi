@@ -11,8 +11,6 @@ from .briefing import is_overdue, local_today
 from .dates import parse_when
 from .models import Action, Company, Doctor, Promise, ScheduledCall, Visit, utcnow
 
-MATERIAL = re.compile(r"\b(stud(y|ies)|literature|leaflet|brochure|samples?|chart|cme|invite|reprint|paper|"
-                      r"detailer|visual aid|lbl)\b", re.I)
 STOCKOUT_REPEAT = timedelta(days=7)  # one open alert per product and chemist a week
 
 
@@ -56,9 +54,13 @@ def stockout_alerts(session, visit: Visit):
 
 
 def material_requests(session, visit: Visit):
+    """The extraction lists which promises are material for the doctor; match them to the promises."""
+    from rapidfuzz import fuzz
+    from .extraction import parse_visit
+    wanted = (parse_visit(visit.call.extracted) or {}).get("materials", []) if visit.call else []
     doctor = visit.doctor.name if visit.doctor else visit.doctor_raw
     for p in visit.promises:
-        if not MATERIAL.search(p.text):
+        if not any(fuzz.token_set_ratio(p.text, m) >= 80 for m in wanted):
             continue
         detail = f"For {doctor}, promised by {visit.rep.name if visit.rep else 'a rep'}"
         if p.due_on:

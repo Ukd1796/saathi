@@ -16,7 +16,9 @@
       "stock_outs": "Cardivas",
       "next_visit": "next Tuesday",
       "feedback": "Says Telma is priced higher than Sun's brand.",
-      "promises": "Bring the Cardivas clinical study next visit"
+      "promises": "Bring the Cardivas clinical study next visit",
+      "readback_confirmed": "yes",
+      "materials": "Bring the Cardivas clinical study next visit"
     }
   },
   "telephony_data": {

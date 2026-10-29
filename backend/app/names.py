@@ -106,9 +106,18 @@ def _say_number(n):
     return out + (" point " + " ".join(WORDS[int(d)] for d in frac) if frac else "")
 
 
+def _say_strength(n):
+    """Strengths are said in digit groups: 625 is "six twenty five", 120 "one twenty"; round
+    hundreds stay "five hundred". Other numbers are read normally."""
+    if "." not in n and len(n) == 3 and not n.endswith("00"):
+        rest = int(n[1:])
+        return f"{WORDS[int(n[0])]} " + (_say_number(str(rest)) if rest >= 10 else f"oh {WORDS[rest]}")
+    return _say_number(n)
+
+
 def spoken(text):
     """What the voice should say: 'Telma 40' -> 'Telma forty', so digits never reach the speech engine."""
-    text = re.sub(r"\d+(?:\.\d+)?", lambda m: f" {_say_number(m.group(0))} ", text)
+    text = re.sub(r"\d+(?:\.\d+)?", lambda m: f" {_say_strength(m.group(0))} ", text)
     return re.sub(r"\s+([.,;:!?])", r"\1", re.sub(r"\s+", " ", text)).strip()
 
 

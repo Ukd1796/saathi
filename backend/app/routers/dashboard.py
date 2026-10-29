@@ -53,7 +53,6 @@ def visit_json(v: Visit, full=False):
     return out
 
 
-REASK = re.compile(r"dobara|दोबारा|phir se|फिर से|repeat|say that again|samajh nahi|समझ नहीं", re.I)
 
 
 def call_quality(session, call: Call):
@@ -66,7 +65,7 @@ def call_quality(session, call: Call):
     return {
         "duration_s": call.duration_s,
         "rep_turns": sum(1 for l in lines if l.startswith("user:")),
-        "reasks": sum(1 for l in lines if l.startswith("assistant:") and REASK.search(l)),
+        "reasks": sum(1 for e in events if e.tool == "resolve_names" and e.confidence == "low"),
         "names": names,
         "ended_by": {"agent_ended_call": "Saathi", "user_hung_up": "rep"}.get(raw.get("termination_reason"), raw.get("termination_reason")),
     }

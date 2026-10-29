@@ -99,6 +99,7 @@ def test_cut_off_report_is_not_saved_and_saathi_calls_back(client, company):
     p["id"] = "dropped-1"
     p["termination_reason"] = "user_hung_up"
     p["transcript"] = "\n".join(p["transcript"].splitlines()[:2])  # the rep started, then the line dropped
+    p["extracted_data"]["Visit"]["readback_confirmed"] = "no"
     r = webhook(client, company, p).json()
     assert "cut off" in r["note"]
     with client.Session() as s:
