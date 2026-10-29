@@ -5,7 +5,7 @@ lookup and extractions. The voice settings copy the hand-tuned prototype agent (
 
 from sqlalchemy import select
 
-from .config import PUBLIC_BASE_URL, ROOT, VOICE
+from .config import PUBLIC_BASE_URL, ROOT, TRANSCRIBER, VOICE
 from .models import Chemist, Company, Doctor, Product, Rep
 
 MAX_PROMPT_NAMES = 300  # beyond this, resolve_names and the per-rep list carry the load
@@ -28,6 +28,23 @@ VOICES = {
                                             "voice_id": "mfMM3ijQgz8QtMeKifko", "speed": 0.9, "temperature": 0.5,
                                             "similarity_boost": 0.6, "style": 0.0}},
 }
+
+def transcriber(company, names):
+    """Speech-to-text, biased towards this company's own names. Pick one with the TRANSCRIBER env var
+    and re-sync: Sarvam is trained on Indian, code-mixed speech; Deepgram nova-3 is English-first."""
+    products = ", ".join(names["products"][:8])
+    configs = {
+        "sarvam-saaras": {"provider": "sarvam", "model": "saaras:v4", "language": "hi", "stream": True,
+                          "endpointing": 900, "keywords": keywords(names),
+                          "context": (f"Phone line where {company.name} medical representatives report doctor visits "
+                                      f"or ask for a briefing, in Hindi, English or a mix. They name doctors, chemists, "
+                                      f"areas and pharma products with strengths, such as {products}.")},
+        "deepgram-nova3": {"provider": "deepgram", "model": "nova-3", "language": "hi", "stream": True,
+                           "encoding": "linear16", "sampling_rate": 16000, "endpointing": 900,
+                           "keywords": keywords(names)},
+    }
+    return configs.get(TRANSCRIBER, configs["sarvam-saaras"])
+
 
 WELCOME = "नमस्ते! साथी बोल रही हूँ। Visit report देनी है, या किसी doctor की briefing चाहिए?"
 HANGUP_MESSAGE = "Dhanyavaad!"
@@ -142,9 +159,7 @@ def agent_config(session, company: Company) -> dict:
                                        "verbosity": "low", "agent_flow_type": "streaming"},
                     },
                     "synthesizer": VOICES.get(VOICE, VOICES["sarvam-ishita"]),
-                    "transcriber": {"provider": "deepgram", "model": "nova-3", "language": "hi", "stream": True,
-                                    "encoding": "linear16", "sampling_rate": 16000, "endpointing": 900,
-                                    "keywords": keywords(names)},
+                    "transcriber": transcriber(company, names),
                     "input": {"provider": "vobiz", "format": "wav"},
                     "output": {"provider": "vobiz", "format": "wav"},
                     "api_tools": api_tools(company),
