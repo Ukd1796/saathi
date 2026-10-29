@@ -117,7 +117,7 @@ export default function Home() {
         <div className="grid items-center gap-8 rounded-3xl bg-gradient-to-r from-brand to-[#7c3aed] p-8 text-white md:grid-cols-[1fr_auto] md:p-12">
           <div>
             <div className="flex items-center gap-2 text-sm font-semibold text-white/80"><ShieldCheck size={16} />Made for India</div>
-            <h2 className="mt-2 text-2xl font-bold md:text-3xl">Global pharma CRMs don&apos;t support mixed-language speech. Your reps speak Hinglish.</h2>
+            <h2 className="mt-2 text-2xl font-bold md:text-3xl">Veeva&apos;s voice agent doesn&apos;t list Hindi. No Indian pharma SFA has voice at all.</h2>
             <p className="mt-3 max-w-2xl text-white/80">Saathi is built for it: Hindi, English and everything in between, with Indian brand names matched against your own catalogue.</p>
           </div>
           <Link href="/signup" className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-6 py-3 font-semibold text-[#14162b] hover:bg-white/90">Get started <ArrowRight size={17} /></Link>
