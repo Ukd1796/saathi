@@ -14,7 +14,7 @@ from ..db import get_session
 from ..ingest import find_rep, process_payload
 from ..models import Company, Doctor, Promise, Rep, ToolEvent
 from ..names import Resolver, parse_items, spoken
-from ..outbound import maybe_callback, maybe_resume, maybe_retry, rep_context
+from ..outbound import greeting, maybe_callback, maybe_resume, maybe_retry, rep_context
 
 log = logging.getLogger("saathi.bolna")
 router = APIRouter(prefix="/bolna")
@@ -83,8 +83,10 @@ def caller(request: Request, company: str = "", contact_number: str = "", author
     _check(comp.tool_token, authorization or request.query_params.get("token"))
     rep = find_rep(session, comp.id, contact_number)
     if rep is None:
-        return {"rep_name": "", "rep_known": "no", "mode": "inbound", "my_doctors": "(unknown caller)", "resume_notes": ""}
-    return {"rep_name": rep.name, "rep_known": "yes", "mode": "inbound", "resume_notes": "", **rep_context(session, rep)}
+        return {"rep_name": "", "rep_known": "no", "mode": "inbound", "my_doctors": "(unknown caller)", "resume_notes": "",
+                "greeting": greeting(None, "inbound")}
+    return {"rep_name": rep.name, "rep_known": "yes", "mode": "inbound", "resume_notes": "",
+            "greeting": greeting(rep, "inbound"), **rep_context(session, rep)}
 
 
 @router.api_route("/tools/resolve_names", methods=["GET", "POST"])

@@ -14,7 +14,7 @@ from rapidfuzz import fuzz
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .extraction import call_type, parse_visit
+from .extraction import call_type, parse_visit, readback_confirmed
 from .matching import phone_key
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -151,11 +151,14 @@ def process_payload(session: Session, company_id: int, payload: dict) -> Call:
     if call.status == "completed" and call.visit is None:
         call.processed_at = utcnow()
         dropped = call.call_type != "briefing" and cut_off(call)
-        visit = None if call.call_type == "briefing" or dropped else build_visit(session, call)
+        unconfirmed = call.call_type != "briefing" and readback_confirmed(call.extracted) is False
+        visit = None if call.call_type == "briefing" or dropped or unconfirmed else build_visit(session, call)
         if call.call_type == "briefing":
             call.process_note = "briefing"
         elif dropped:
             call.process_note = "cut off before the read-back; Saathi will call back"
+        elif unconfirmed:
+            call.process_note = "not saved: the rep didn't confirm the read-back"
         elif visit is None:
             call.process_note = "no visit in extracted_data"
         elif visit.unmatched:

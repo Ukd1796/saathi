@@ -125,3 +125,28 @@ def test_visit_shows_call_quality(client, company):
     q = client.get(f"/api/visits/{vid}").json()["quality"]
     assert [n["confidence"] for n in q["names"]] == ["high", "high", "low"]
     assert q["rep_turns"] == 3 and q["duration_s"]
+
+
+def test_greeting_fits_the_rep_and_the_reason_for_calling(client, company, live, monkeypatch):
+    from app.models import Rep
+    from app.outbound import greeting
+    with client.Session() as s:
+        rep = s.query(Rep).first()
+    assert greeting(rep, "inbound").startswith("नमस्ते Asha!")
+    assert "पिछली visit report बीच में कट गई थी, Dr Mehta वाली" in greeting(rep, "resume", "doctor: Dr Mehta; area: Kothrud")
+    assert "आज Dr Rao से मिलना है" in greeting(rep, "briefing", "doctor: Dr Rao")
+    assert greeting(None, "inbound").startswith("नमस्ते!")  # unknown caller: no name
+    client.post(f"/api/reps/{rep_id(client)}/call")
+    assert live[-1][1]["greeting"].startswith("नमस्ते Asha!")
+    lookup = client.get(f"/bolna/caller?company={company.id}&contact_number={ASHA}",
+                        headers={"Authorization": f"Bearer {company.tool_token}"}).json()
+    assert lookup["greeting"].startswith("नमस्ते Asha!")
+
+
+def test_debrief_the_rep_did_not_confirm_is_not_saved(client, company):
+    p = copy.deepcopy(PAYLOAD)
+    p["termination_reason"] = "agent_ended_call"  # "cut the call, thank you": Saathi ended it politely
+    p["extracted_data"]["Visit"]["readback_confirmed"] = "no"
+    assert "not saved" in webhook(client, company, p).json()["note"]
+    with client.Session() as s:
+        assert s.query(Visit).count() == 0 and s.query(ScheduledCall).count() == 0  # and no resume call

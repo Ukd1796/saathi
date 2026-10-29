@@ -52,14 +52,37 @@ def rep_context(session, rep: Rep) -> dict:
             "open_promises": "; ".join(f"{p.doctor.name}: {p.text}" for p in open_ if p.doctor) or "none"}
 
 
+def _note(notes, field):
+    m = re.search(rf"{field}: ([^;]+)", notes or "")
+    return m.group(1).strip() if m else None
+
+
+def greeting(rep: Rep | None, mode: str, notes: str = "") -> str:
+    """Saathi's first line, for this rep and this reason for calling. Built from the rep's record and
+    the call's notes; the agent then carries on from it."""
+    name = f" {rep.name.split()[0]}" if rep and rep.name else ""
+    doctor = _note(notes, "doctor")
+    if mode == "resume":
+        about = f", {doctor} वाली" if doctor else ""
+        return f"नमस्ते{name}! साथी बोल रही हूँ। आपकी पिछली visit report बीच में कट गई थी{about}। उसे पूरा कर लें?"
+    if mode == "briefing":
+        if doctor:
+            return f"Good morning{name}! साथी बोल रही हूँ। आज {doctor} से मिलना है। Briefing दूँ?"
+        return f"Good morning{name}! साथी बोल रही हूँ। आज किस doctor से मिलने जा रहे हैं? मैं briefing दे सकती हूँ।"
+    if mode == "sweep":
+        return f"नमस्ते{name}! साथी बोल रही हूँ। आज की visit report बाकी है। कौनसे doctor से मिले?"
+    return f"नमस्ते{name}! साथी बोल रही हूँ। Visit report देनी है, या किसी doctor की briefing चाहिए?"
+
+
 def call_rep(session, company: Company, rep: Rep, reason: str, mode: str | None = None, notes: str = "") -> OutboundCall:
     row = OutboundCall(company_id=company.id, rep_id=rep.id, reason=reason)
     try:
         if not company.bolna_agent_id:
             raise bolna.BolnaError("create the voice agent first")
+        mode = mode or MODES.get(reason, "inbound")
         res = bolna.make_call(company.bolna_agent_id, rep.phone,
-                              user_data={"rep_name": rep.name, "mode": mode or MODES.get(reason, "inbound"),
-                                         "resume_notes": notes, **rep_context(session, rep)},
+                              user_data={"rep_name": rep.name, "mode": mode, "resume_notes": notes,
+                                         "greeting": greeting(rep, mode, notes), **rep_context(session, rep)},
                               from_number=company.phone_number)
         row.execution_id = res.get("execution_id") or res.get("call_id")
     except bolna.BolnaError as exc:

@@ -54,7 +54,8 @@ def transcriber(company, names):
     return configs.get(TRANSCRIBER, configs["deepgram-nova3"])
 
 
-WELCOME = "नमस्ते! साथी बोल रही हूँ। Visit report देनी है, या किसी doctor की briefing चाहिए?"
+# The opening line is built per call (rep's name, and why Saathi is calling): see outbound.greeting().
+WELCOME = "{{greeting}}"
 HANGUP_MESSAGE = "Dhanyavaad!"
 HANGUP_PROMPT = """End the call only in one of these cases:
 1. The agent has read back the full visit and the MR clearly confirmed it (e.g. "haan", "sahi hai", "correct", "yes", "that's right") with no correction or new detail in the same reply.
@@ -194,7 +195,7 @@ def agent_config(session, company: Company) -> dict:
                         "agent_type": "simple_llm_agent",
                         "agent_flow_type": "streaming",
                         "llm_config": {"provider": "openai", "family": "openai", "model": "gpt-5.4-mini",
-                                       "max_tokens": 500, "temperature": 1.0, "reasoning_effort": "none",
+                                       "max_tokens": 500, "temperature": 1.0,  # Bolna requires 1 for reasoning models (gpt-5.x) "reasoning_effort": "none",
                                        "verbosity": "low", "agent_flow_type": "streaming"},
                     },
                     "synthesizer": VOICES.get(VOICE, VOICES["sarvam-ishita"]),
