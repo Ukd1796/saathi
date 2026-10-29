@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  AudioLines, ClipboardList, Database, HandHeart, LayoutDashboard, LogOut, Menu, PackageX, Rocket,
+  AudioLines, ClipboardList, Database, LayoutDashboard, LogOut, Menu, PackageX, Rocket,
   Settings, Stethoscope, Users, X, type LucideIcon,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
@@ -26,7 +26,6 @@ const NAV: { group: string; items: NavItem[] }[] = [
   ] },
   { group: "Field", items: [
     { href: "/doctors", label: "Doctors", icon: Stethoscope },
-    { href: "/promises", label: "Promises", icon: HandHeart },
     { href: "/stock-outs", label: "Stock-outs", icon: PackageX },
   ] },
   { group: "Team & data", items: [

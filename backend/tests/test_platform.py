@@ -1,3 +1,4 @@
+from datetime import timedelta
 import copy
 
 from app.models import Promise, Visit, utcnow
@@ -100,6 +101,15 @@ def test_sweep_targets_only_silent_reps(client, company):
         s.query(Visit).update({Visit.visited_at: utcnow()})
         s.commit()
         assert [r.name for r in reps_without_visits_today(s, company.id)] == ["Ravi"]
+
+
+def test_doctor_list_counts_open_and_overdue_promises(client, company):
+    webhook(client, company, PAYLOAD)
+    with client.Session() as s:
+        s.query(Promise).update({Promise.created_at: utcnow() - timedelta(days=10)})
+        s.commit()
+    [mehta] = [d for d in client.get("/api/doctors").json() if d["open_promises"]]
+    assert mehta["name"] == "Dr Mehta" and mehta["overdue_promises"] == 1
 
 
 def test_overview_counts(client, company):

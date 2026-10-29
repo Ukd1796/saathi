@@ -7,8 +7,8 @@ import { ago, useApi } from "@/lib/api";
 import { useFilters } from "@/lib/use-filters";
 import { Avatar, Badge, Card, EmptyState, FilterSelect, LoadingRows, PageHeader, SearchInput, Table, Tabs, Td, Tr } from "@/components/ui";
 
-type DoctorRow = { id: number; name: string; area: string | null; speciality: string | null; rep: string | null; last_visit: string | null; open_promises: number };
-type View = "all" | "due" | "promises" | "unassigned";
+type DoctorRow = { id: number; name: string; area: string | null; speciality: string | null; rep: string | null; last_visit: string | null; open_promises: number; overdue_promises: number };
+type View = "all" | "due" | "promises" | "overdue" | "unassigned";
 type Sort = "name" | "oldest" | "newest" | "promises";
 
 /** A doctor not seen for this long (or never) is due for a visit. */
@@ -28,6 +28,7 @@ const VIEWS: Record<View, (d: DoctorRow) => boolean> = {
   all: () => true,
   due: isDue,
   promises: (d) => d.open_promises > 0,
+  overdue: (d) => d.overdue_promises > 0,
   unassigned: (d) => !d.rep,
 };
 
@@ -56,7 +57,7 @@ export default function DoctorsPage() {
       name: (a, b) => a.name.localeCompare(b.name),
       oldest: (a, b) => daysSince(b.last_visit) - daysSince(a.last_visit) || a.name.localeCompare(b.name),
       newest: (a, b) => daysSince(a.last_visit) - daysSince(b.last_visit) || a.name.localeCompare(b.name),
-      promises: (a, b) => b.open_promises - a.open_promises || a.name.localeCompare(b.name),
+      promises: (a, b) => b.overdue_promises - a.overdue_promises || b.open_promises - a.open_promises || a.name.localeCompare(b.name),
     };
     return [...out].sort(by[f.sort as Sort] ?? by.name);
   }, [filtered, f.view, f.sort]);
@@ -78,6 +79,7 @@ export default function DoctorsPage() {
             { value: "all", label: "All", count: counts.all },
             { value: "due", label: "Due for a visit", count: counts.due },
             { value: "promises", label: "Open promises", count: counts.promises },
+            { value: "overdue", label: "Overdue promises", count: counts.overdue },
             { value: "unassigned", label: "Unassigned", count: counts.unassigned },
           ]} />
           <label className="relative inline-flex h-9 items-center gap-1.5 rounded-xl px-2 text-sm text-muted hover:text-ink">
@@ -128,7 +130,7 @@ export default function DoctorsPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate font-semibold text-ink">{d.name}</span>
-                      {d.open_promises > 0 && <Badge tone="warn">{d.open_promises} open</Badge>}
+                      {d.open_promises > 0 && <Badge tone={d.overdue_promises ? "bad" : "warn"}>{d.overdue_promises ? `${d.overdue_promises} overdue` : `${d.open_promises} open`}</Badge>}
                     </div>
                     <div className="truncate text-xs text-muted">{[d.speciality, d.area, d.rep ?? "unassigned"].filter(Boolean).join(" · ")}</div>
                     <div className={`text-xs ${isDue(d) ? "font-medium text-coral" : "text-muted"}`}>{d.last_visit ? `Visited ${ago(d.last_visit)}` : "Never visited"}</div>
@@ -155,7 +157,9 @@ export default function DoctorsPage() {
                     ? <span className="inline-flex items-center gap-1 font-medium text-coral"><CalendarClock size={13} />{d.last_visit ? ago(d.last_visit) : "never visited"}</span>
                     : <span className="text-muted">{ago(d.last_visit)}</span>}
                 </Td>
-                <Td>{d.open_promises ? <Badge tone="warn">{d.open_promises} open</Badge> : <span className="text-muted">–</span>}</Td>
+                <Td>{d.open_promises ? (
+                  <span className="flex flex-wrap gap-1"><Badge tone="warn">{d.open_promises} open</Badge>{d.overdue_promises > 0 && <Badge tone="bad">{d.overdue_promises} overdue</Badge>}</span>
+                ) : <span className="text-muted">–</span>}</Td>
               </Tr>
             ))}
           </Table>

@@ -51,7 +51,7 @@ export default function OverviewPage() {
   const { data: o } = useApi<Overview>("/overview", 5000);
 
   const attention = o ? [
-    o.overdue_promises > 0 && { href: "/promises?tab=overdue", icon: HandHeart, text: `${o.overdue_promises} promise${o.overdue_promises > 1 ? "s are" : " is"} overdue (7+ days)`, tone: "bad" as const },
+    o.overdue_promises > 0 && { href: "/doctors?view=overdue", icon: HandHeart, text: `${o.overdue_promises} promise${o.overdue_promises > 1 ? "s are" : " is"} overdue (7+ days)`, tone: "bad" as const },
     o.silent_reps.length > 0 && { href: "/reps", icon: AlertTriangle, text: `${o.silent_reps.length} rep${o.silent_reps.length > 1 ? "s haven't" : " hasn't"} reported today: ${o.silent_reps.slice(0, 3).join(", ")}${o.silent_reps.length > 3 ? "…" : ""}`, tone: "warn" as const },
   ].filter((x) => !!x) : [];
 
@@ -68,8 +68,8 @@ export default function OverviewPage() {
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
             <Stat label="Visits today" value={o.visits_today} icon={ClipboardList} href="/visits" />
             <Stat label="Calls today" value={o.calls_today} icon={PhoneCall} tone="good" />
-            <Stat label="Open promises" value={o.open_promises} icon={HandHeart} href="/promises" />
-            <Stat label="Overdue promises" value={o.overdue_promises} icon={AlertTriangle} tone={o.overdue_promises ? "bad" : "default"} href="/promises?tab=overdue" />
+            <Stat label="Open promises" value={o.open_promises} icon={HandHeart} href="/doctors?view=promises" />
+            <Stat label="Overdue promises" value={o.overdue_promises} icon={AlertTriangle} tone={o.overdue_promises ? "bad" : "default"} href="/doctors?view=overdue" />
             <Stat label="Stock-outs, 7 days" value={o.stock_outs_week} icon={PackageX} tone={o.stock_outs_week ? "warn" : "default"} href="/stock-outs" />
           </div>
 

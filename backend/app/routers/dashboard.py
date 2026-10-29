@@ -346,6 +346,10 @@ def list_doctors(user: User = Depends(current_user), session: Session = Depends(
                                 .where(Visit.company_id == cid).group_by(Visit.doctor_id)).all())
     open_ = dict(session.execute(select(Promise.doctor_id, func.count(Promise.id))
                                  .where(Promise.status == "open").group_by(Promise.doctor_id)).all())
+    overdue = dict(session.execute(select(Promise.doctor_id, func.count(Promise.id))
+                                   .where(Promise.status == "open",
+                                          Promise.created_at < utcnow() - timedelta(days=OVERDUE_DAYS))
+                                   .group_by(Promise.doctor_id)).all())
     return [{"id": d.id, "name": d.name, "area": d.area, "speciality": d.speciality,
              "rep": d.assigned_rep.name if d.assigned_rep else None, "last_visit": _iso(last.get(d.id)),
-             "open_promises": open_.get(d.id, 0)} for d in doctors]
+             "open_promises": open_.get(d.id, 0), "overdue_promises": overdue.get(d.id, 0)} for d in doctors]
