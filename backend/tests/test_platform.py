@@ -19,6 +19,8 @@ def test_resolver_on_real_misheard_names(client, company):
         assert r.resolve("Exezle 500", "product").confidence == "low"  # don't guess: ask again
         assert r.resolve("telma forty", "product").as_dict()["confidence"] == "high"  # strength said as a word
         assert r.resolve("azithral five hundred", "product").best == "Azithral 500"
+        assert r.resolve("augmentin six twenty five", "product").best == "Augmentin 625"  # said digit-group by group
+        assert r.resolve("ecosprin seven five", "product").best == "Ecosprin 75"
     assert to_latin("औंध") == "aundh"
     assert parse_items("product: Exezle 500; area: हजस पर; nonsense") == [("product", "Exezle 500"), ("area", "हजस पर")]
 

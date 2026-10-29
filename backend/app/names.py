@@ -54,17 +54,26 @@ def _run_to_digits(run):
     """'five hundred' -> '500', 'forty' -> '40', 'six point two five' -> '6.25'."""
     words = run.lower().split()
     whole, _, frac = " ".join(words).partition("point")
-    total, current = 0, 0
-    for w in whole.split():
-        if w in UNITS:
-            current += UNITS[w]
-        elif w in TENS:
-            current += TENS[w]
-        elif w == "hundred":
-            current = (current or 1) * 100
-    total += current
+    whole = whole.split()
     digits = "".join(str(UNITS[w]) for w in frac.split() if w in UNITS)
-    return f"{total}.{digits}" if digits else str(total)
+    if "hundred" in whole:
+        total = 0
+        for w in whole:
+            if w == "hundred":
+                total = (total or 1) * 100
+            else:
+                total += UNITS.get(w, 0) + TENS.get(w, 0)
+        number = str(total)
+    else:
+        # Strengths are often said digit-group by digit-group: "six twenty five" is 625, not 31.
+        groups = []
+        for w in whole:
+            if w in UNITS and groups and groups[-1] % 10 == 0 and groups[-1] >= 20 and UNITS[w] < 10:
+                groups[-1] += UNITS[w]
+            elif w in UNITS or w in TENS:
+                groups.append(UNITS.get(w, TENS.get(w)))
+        number = "".join(str(g) for g in groups) if groups else "0"
+    return f"{number}.{digits}" if digits else number
 
 
 def spoken_numbers(text):
