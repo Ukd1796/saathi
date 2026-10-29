@@ -112,6 +112,8 @@ export type Visit = {
   unmatched: { kind: string; heard: string; suggestion: string | null }[];
   call?: { duration_s: number | null; transcript: string | null; direction: string | null; extracted: unknown;
     cost: number | null; recording_url: string | null };
+  quality?: { duration_s: number | null; rep_turns: number; reasks: number; ended_by: string | null;
+    names: { kind: string | null; heard: string | null; best: string | null; confidence: string | null }[] };
 };
 
 /** Download rows as a CSV file (opens in Excel). */

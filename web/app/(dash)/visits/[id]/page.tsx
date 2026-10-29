@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { AlertTriangle, CalendarClock, HandHeart, MessageSquareQuote, MessagesSquare, Package, PackageX, Pill, ShoppingCart, Store, Volume2 } from "lucide-react";
+import { AlertTriangle, CalendarClock, Check, CircleHelp, Gauge, RotateCcw, HandHeart, MessageSquareQuote, MessagesSquare, Package, PackageX, Pill, ShoppingCart, Store, Volume2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useApi, when, type Visit } from "@/lib/api";
 import { DoctorCell, Items } from "@/components/visit-bits";
@@ -27,6 +27,43 @@ function Chip({ label, value, tone }: { label: string; value: number; tone: stri
       <div className="text-lg font-bold tabular-nums">{value}</div>
       <div className="text-xs font-medium opacity-80">{label}</div>
     </div>
+  );
+}
+
+const OUTCOME = {
+  high: { icon: Check, label: "understood", tone: "text-good" },
+  medium: { icon: CircleHelp, label: "confirmed with rep", tone: "text-warn" },
+  low: { icon: RotateCcw, label: "asked again", tone: "text-coral" },
+} as const;
+
+/** How hard the call was: the names Saathi checked and how sure it was, plus re-asks and length. */
+function CallQuality({ q }: { q: NonNullable<Visit["quality"]> }) {
+  const names = q.names.filter((n) => n.heard);
+  return (
+    <Card title="Call quality" icon={Gauge}>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        {[["Length", q.duration_s ? `${Math.round(q.duration_s)}s` : "–"], ["Rep turns", q.rep_turns], ["Asked again", q.reasks]].map(([k, val]) => (
+          <div key={k} className="rounded-xl bg-soft py-2"><div className="text-lg font-bold tabular-nums text-ink">{val}</div><div className="text-[11px] text-muted">{k}</div></div>
+        ))}
+      </div>
+      {names.length > 0 && (
+        <ul className="mt-4 space-y-1.5 text-sm">
+          {names.map((n, i) => {
+            const o = OUTCOME[(n.confidence as keyof typeof OUTCOME) ?? "low"] ?? OUTCOME.low;
+            return (
+              <li key={i} className="flex items-center gap-2">
+                <o.icon size={14} className={`shrink-0 ${o.tone}`} />
+                <span className="truncate text-muted">&ldquo;{n.heard}&rdquo;</span>
+                <span className="text-muted">→</span>
+                <span className="truncate font-medium text-ink">{n.best ?? "?"}</span>
+                <span className={`ml-auto whitespace-nowrap text-[11px] ${o.tone}`}>{o.label}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {names.length === 0 && <p className="mt-3 text-xs text-muted">No names needed checking on this call.</p>}
+    </Card>
   );
 }
 
@@ -80,7 +117,9 @@ export default function VisitPage() {
           </div>
         </Card>
 
-        <Card title={`Call${v.call?.duration_s ? ` · ${Math.round(v.call.duration_s)} s` : ""}`} icon={Volume2} className="lg:col-span-2">
+        <div className="space-y-6 lg:col-span-2">
+        {v.quality && <CallQuality q={v.quality} />}
+        <Card title={`Call${v.call?.duration_s ? ` · ${Math.round(v.call.duration_s)} s` : ""}`} icon={Volume2}>
           {v.call?.recording_url && <audio controls src={v.call.recording_url} className="mb-4 w-full" />}
           <div className="max-h-[36rem] space-y-2.5 overflow-auto pr-1">
             {lines.length === 0 ? <div className="text-sm text-muted">No transcript.</div> : lines.map((line, i) => {
@@ -96,6 +135,7 @@ export default function VisitPage() {
             })}
           </div>
         </Card>
+        </div>
       </div>
     </div>
   );

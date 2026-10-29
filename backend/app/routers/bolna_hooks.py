@@ -12,9 +12,9 @@ from sqlalchemy.orm import Session
 from ..briefing import doctor_brief
 from ..db import get_session
 from ..ingest import find_rep, process_payload
-from ..models import Company, Doctor, Promise, Rep
+from ..models import Company, Doctor, Promise, Rep, ToolEvent
 from ..names import Resolver, parse_items, spoken
-from ..outbound import maybe_callback
+from ..outbound import maybe_callback, maybe_resume, maybe_retry
 
 log = logging.getLogger("saathi.bolna")
 router = APIRouter(prefix="/bolna")
@@ -60,8 +60,9 @@ async def webhook(company_id: int, request: Request, x_webhook_secret: str = Hea
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     log.info("company %s call %s status=%s note=%s", company.id, call.id, call.status, call.process_note)
+    maybe_retry(session, call)
     if call.status == "completed":
-        maybe_callback(session, company, call)
+        maybe_resume(session, company, call) or maybe_callback(session, company, call)
     return {"ok": True, "call_id": call.id, "status": call.status, "note": call.process_note}
 
 
@@ -82,13 +83,13 @@ def caller(request: Request, company: str = "", contact_number: str = "", author
     _check(comp.tool_token, authorization or request.query_params.get("token"))
     rep = find_rep(session, comp.id, contact_number)
     if rep is None:
-        return {"rep_name": "", "rep_known": "no", "mode": "inbound", "my_doctors": "(unknown caller)"}
+        return {"rep_name": "", "rep_known": "no", "mode": "inbound", "my_doctors": "(unknown caller)", "resume_notes": ""}
     doctors = session.scalars(select(Doctor).where(Doctor.company_id == comp.id)).all()
     mine = [d for d in doctors if d.assigned_rep_id == rep.id or (d.area and d.area in rep.areas)]
     open_ = session.scalars(select(Promise).where(Promise.status == "open",
                                                   Promise.doctor_id.in_([d.id for d in mine]))).all()
     return {
-        "rep_name": rep.name, "rep_known": "yes", "mode": "inbound",
+        "rep_name": rep.name, "rep_known": "yes", "mode": "inbound", "resume_notes": "",
         "my_doctors": ", ".join(f"{d.name} ({d.area})" if d.area else d.name for d in mine) or "none listed",
         "open_promises": "; ".join(f"{p.doctor.name}: {p.text}" for p in open_ if p.doctor) or "none",
     }
@@ -103,6 +104,10 @@ async def resolve_names(request: Request, company: str = "", authorization: str 
     resolver = Resolver(session, comp.id, _rep_for(session, comp, params))
     items = parse_items(params.get("names"))
     results = [resolver.resolve(heard, kind).as_dict() for kind, heard in items]
+    rep = _rep_for(session, comp, params)
+    session.add_all(ToolEvent(company_id=comp.id, rep_id=rep.id if rep else None, tool="resolve_names", kind=r["kind"],
+                              heard=r["heard"], best=r["best"], confidence=r["confidence"]) for r in results)
+    session.commit()
     log.info("resolve_names %s -> %s", params.get("names"), [(r["best"], r["confidence"]) for r in results])
     if not results:
         return {"results": [], "message": 'No names given. Send them as "product: Azithral 500; area: Hadapsar".'}
@@ -124,7 +129,11 @@ async def doctor_brief_tool(request: Request, company: str = "", authorization: 
     comp = _company(session, company)
     _check(comp.tool_token, authorization)
     params = await _params(request)
-    m = Resolver(session, comp.id, _rep_for(session, comp, params)).resolve(params.get("doctor", ""), "doctor")
+    rep = _rep_for(session, comp, params)
+    m = Resolver(session, comp.id, rep).resolve(params.get("doctor", ""), "doctor")
+    session.add(ToolEvent(company_id=comp.id, rep_id=rep.id if rep else None, tool="doctor_brief", kind="doctor",
+                          heard=params.get("doctor"), best=m.best, confidence=m.confidence))
+    session.commit()
     if m.confidence == "low" or not m.best:
         return {"message": f'No doctor matches "{params.get("doctor")}". Ask the MR for the name again.'}
     if m.confidence == "medium":

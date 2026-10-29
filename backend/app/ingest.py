@@ -18,6 +18,7 @@ from .extraction import call_type, parse_visit
 from .matching import phone_key
 from .models import Call, Chemist, Doctor, Product, Promise, Rep, StockOut, Visit, VisitItem, utcnow
 from .names import Resolver
+from .outbound import cut_off
 
 
 def _rep_phone(payload):
@@ -145,9 +146,12 @@ def process_payload(session: Session, company_id: int, payload: dict) -> Call:
     # Extraction can finish after the first `completed` POST, so keep trying until a visit exists.
     if call.status == "completed" and call.visit is None:
         call.processed_at = utcnow()
-        visit = None if call.call_type == "briefing" else build_visit(session, call)
+        dropped = call.call_type != "briefing" and cut_off(call)
+        visit = None if call.call_type == "briefing" or dropped else build_visit(session, call)
         if call.call_type == "briefing":
             call.process_note = "briefing"
+        elif dropped:
+            call.process_note = "cut off before the read-back; Saathi will call back"
         elif visit is None:
             call.process_note = "no visit in extracted_data"
         elif visit.unmatched:

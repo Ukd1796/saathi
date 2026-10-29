@@ -1,6 +1,7 @@
 """Read and act on the field data: overview, visits, doctors, promises, stock-outs, the review
 queue for names the matcher could not place, and rep handover."""
 
+import re
 from collections import Counter
 from datetime import datetime, timedelta
 
@@ -13,11 +14,11 @@ from sqlalchemy.orm import Session
 
 from ..briefing import OVERDUE_DAYS, doctor_brief
 from ..db import get_session
-from ..models import (Call, Chemist, Doctor, OutboundCall, Product, Promise, Rep, StockOut, User, Visit,
-                      utcnow)
+from ..models import (Call, Chemist, Doctor, OutboundCall, Product, Promise, Rep, ScheduledCall, StockOut,
+                      ToolEvent, User, Visit, utcnow)
 from ..auth import current_user
 from ..names import Resolver, learn_alias
-from ..outbound import TZ, reps_without_visits_today, start_of_local_day_utc
+from ..outbound import TZ, in_calling_hours, local_now, reps_without_visits_today, start_of_local_day_utc
 
 router = APIRouter(prefix="/api")
 
@@ -49,6 +50,37 @@ def visit_json(v: Visit, full=False):
         out["call"] = {"duration_s": v.call.duration_s, "transcript": v.call.transcript, "direction": v.call.direction,
                        "extracted": v.call.extracted, "cost": v.call.cost, "recording_url": recording_url(v.call.raw)}
     return out
+
+
+REASK = re.compile(r"dobara|दोबारा|phir se|फिर से|repeat|say that again|samajh nahi|समझ नहीं", re.I)
+
+
+def _when(raw, key):
+    try:
+        return datetime.fromisoformat(raw[key].replace("Z", "+00:00")).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    except (KeyError, AttributeError, TypeError, ValueError):
+        return None
+
+
+def call_quality(session, call: Call):
+    """How hard the call was for the rep: names Saathi checked (and how sure it was), how often it
+    asked again, and how the call ended."""
+    raw = call.raw or {}
+    start = _when(raw, "initiated_at") or call.created_at
+    end = _when(raw, "updated_at") or (start + timedelta(seconds=(call.duration_s or 0) + 120))
+    events = session.scalars(select(ToolEvent).where(ToolEvent.company_id == call.company_id, ToolEvent.rep_id == call.rep_id,
+                                                     ToolEvent.created_at >= start - timedelta(seconds=5),
+                                                     ToolEvent.created_at <= end + timedelta(seconds=5))
+                             .order_by(ToolEvent.created_at)).all() if call.rep_id else []
+    lines = (call.transcript or "").splitlines()
+    names = [{"kind": e.kind, "heard": e.heard, "best": e.best, "confidence": e.confidence} for e in events]
+    return {
+        "duration_s": call.duration_s,
+        "rep_turns": sum(1 for l in lines if l.startswith("user:")),
+        "reasks": sum(1 for l in lines if l.startswith("assistant:") and REASK.search(l)),
+        "names": names,
+        "ended_by": {"agent_ended_call": "Saathi", "user_hung_up": "rep"}.get(raw.get("termination_reason"), raw.get("termination_reason")),
+    }
 
 
 def recording_url(raw):
@@ -153,7 +185,11 @@ def list_visits(rep_id: int | None = None, doctor_id: int | None = None, needs_r
 
 @router.get("/visits/{visit_id}")
 def get_visit(visit_id: int, user: User = Depends(current_user), session: Session = Depends(get_session)):
-    return visit_json(_visit(session, user, visit_id), full=True)
+    v = _visit(session, user, visit_id)
+    out = visit_json(v, full=True)
+    if v.call:
+        out["quality"] = call_quality(session, v.call)
+    return out
 
 
 @router.get("/doctors/{doctor_id}")
@@ -353,3 +389,61 @@ def list_doctors(user: User = Depends(current_user), session: Session = Depends(
     return [{"id": d.id, "name": d.name, "area": d.area, "speciality": d.speciality,
              "rep": d.assigned_rep.name if d.assigned_rep else None, "last_visit": _iso(last.get(d.id)),
              "open_promises": open_.get(d.id, 0), "overdue_promises": overdue.get(d.id, 0)} for d in doctors]
+
+
+# ---- scheduled calls -------------------------------------------------------------------------
+
+class ScheduleIn(BaseModel):
+    rep_id: int
+    time: str  # HH:MM local
+    repeat: str = "once"  # once | weekdays | daily
+    purpose: str = "report"  # report | briefing
+
+
+def schedule_json(sc: ScheduledCall):
+    return {"id": sc.id, "rep_id": sc.rep_id, "rep": sc.rep.name, "purpose": sc.purpose, "time": sc.time,
+            "repeat": sc.repeat, "run_on": sc.run_on, "active": sc.active, "last_run_on": sc.last_run_on,
+            "last_result": sc.last_result, "automatic": sc.source_call_id is not None}
+
+
+@router.get("/schedules")
+def list_schedules(user: User = Depends(current_user), session: Session = Depends(get_session)):
+    """Active schedules, plus the last few that ran, so the manager sees what happened."""
+    rows = session.scalars(select(ScheduledCall).where(ScheduledCall.company_id == user.company_id)
+                           .order_by(ScheduledCall.created_at.desc()).limit(50)).all()
+    active = sorted((r for r in rows if r.active), key=lambda r: (r.run_on or "", r.time))
+    done = [r for r in rows if not r.active][:8]
+    return {"active": [schedule_json(r) for r in active], "recent": [schedule_json(r) for r in done]}
+
+
+@router.post("/schedules")
+def create_schedule(body: ScheduleIn, user: User = Depends(current_user), session: Session = Depends(get_session)):
+    rep = session.get(Rep, body.rep_id)
+    if rep is None or rep.company_id != user.company_id or rep.status != "active":
+        raise HTTPException(404, "no such active rep")
+    if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", body.time):
+        raise HTTPException(422, "time must be HH:MM")
+    if not in_calling_hours(body.time):
+        raise HTTPException(422, "Saathi only calls reps between 9:00 and 21:00")
+    if body.repeat not in ("once", "weekdays", "daily") or body.purpose not in ("report", "briefing"):
+        raise HTTPException(422, "unknown repeat or purpose")
+    now = local_now()
+    run_on = None
+    if body.repeat == "once":  # today if the time is still ahead, otherwise tomorrow
+        day = now if body.time > now.strftime("%H:%M") else now + timedelta(days=1)
+        run_on = day.strftime("%Y-%m-%d")
+    sc = ScheduledCall(company_id=user.company_id, rep_id=rep.id, purpose=body.purpose, time=body.time,
+                       repeat=body.repeat, run_on=run_on)
+    session.add(sc)
+    session.commit()
+    return schedule_json(sc)
+
+
+@router.delete("/schedules/{schedule_id}")
+def cancel_schedule(schedule_id: int, user: User = Depends(current_user), session: Session = Depends(get_session)):
+    sc = session.get(ScheduledCall, schedule_id)
+    if sc is None or sc.company_id != user.company_id:
+        raise HTTPException(404, "no such schedule")
+    sc.active, sc.last_result = False, "cancelled"
+    session.commit()
+    return schedule_json(sc)

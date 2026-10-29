@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRightLeft, ClipboardList, MapPin, PhoneCall, PhoneOutgoing, Stethoscope, UserPlus, Users } from "lucide-react";
+import { ArrowRightLeft, CalendarClock, ClipboardList, MapPin, PhoneCall, PhoneOutgoing, Stethoscope, UserPlus, Users } from "lucide-react";
 import { useState } from "react";
 import { api, type ApiError, ago, mask, useApi } from "@/lib/api";
 import { useToast } from "@/components/toast";
+import { ScheduledList, ScheduleModal, type Schedules } from "@/components/scheduled-calls";
 import { Avatar, Badge, Button, Card, EmptyState, Label, Modal, PageHeader, Select, Skeleton, Tabs } from "@/components/ui";
 
 type RepRow = { id: number; name: string; phone: string; area: string | null; manager: string | null; status: string;
@@ -14,7 +15,9 @@ export default function RepsPage() {
   const toast = useToast();
   const { data, reload } = useApi<RepRow[]>("/reps");
   const [show, setShow] = useState<"active" | "left">("active");
+  const schedules = useApi<Schedules>("/schedules", 30000);
   const [calling, setCalling] = useState<RepRow | null>(null);
+  const [scheduling, setScheduling] = useState<RepRow | null>(null);
   const [handover, setHandover] = useState<RepRow | null>(null);
   const [to, setTo] = useState("");
   const [busy, setBusy] = useState(false);
@@ -45,6 +48,8 @@ export default function RepsPage() {
           { value: "active", label: "Active", count: active.length }, { value: "left", label: "Left", count: all.length - active.length },
         ]} />
       </div>
+
+      {show === "active" && <ScheduledList data={schedules.data} onChange={schedules.reload} />}
 
       {!data ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-56" />)}</div>
@@ -81,6 +86,7 @@ export default function RepsPage() {
                 {r.status === "active" ? <>
                   <Button size="sm" icon={PhoneCall} className="flex-1" onClick={() => setCalling(r)}>Call now</Button>
                   <Button size="sm" variant="secondary" icon={ArrowRightLeft} className="flex-1" onClick={() => { setHandover(r); setTo(""); }}>Hand over</Button>
+                  <Button size="sm" variant="secondary" icon={CalendarClock} aria-label={`Schedule a call to ${r.name}`} title="Schedule a call" onClick={() => setScheduling(r)} />
                 </> : (
                   <Button size="sm" variant="secondary" className="flex-1" disabled={busy} onClick={() => act(async () => {
                     await api(`/reps/${r.id}`, { method: "PATCH", json: { status: "active" } });
@@ -104,6 +110,9 @@ export default function RepsPage() {
         </>}>
         <p className="text-sm text-muted">Saathi will phone this rep right away and take a visit report or give a briefing. Only call real numbers you&apos;re allowed to call.</p>
       </Modal>
+
+      <ScheduleModal key={scheduling?.id ?? "none"} rep={scheduling} onClose={() => setScheduling(null)}
+        onDone={() => { setScheduling(null); schedules.reload(); }} />
 
       <Modal open={!!handover} onClose={() => setHandover(null)} title={`Hand over ${handover?.name}'s doctors`}
         footer={<>

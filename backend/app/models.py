@@ -203,13 +203,50 @@ class Promise(Base):
     doctor: Mapped[Doctor | None] = relationship()
 
 
+class ToolEvent(Base):
+    """One name Saathi checked during a call (resolve_names / get_doctor_brief). Bolna doesn't report
+    tool calls in the execution, so we keep our own record to show call quality afterwards."""
+    __tablename__ = "tool_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    rep_id: Mapped[int | None] = mapped_column(ForeignKey("reps.id"), index=True)
+    tool: Mapped[str] = mapped_column(String(20))  # resolve_names | doctor_brief
+    kind: Mapped[str | None] = mapped_column(String(10))
+    heard: Mapped[str | None] = mapped_column(Text)
+    best: Mapped[str | None] = mapped_column(Text)
+    confidence: Mapped[str | None] = mapped_column(String(10))  # high | medium | low
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
+
+
+class ScheduledCall(Base):
+    """A call the manager scheduled (or Saathi scheduled itself, to retry or to resume a cut-off report)."""
+    __tablename__ = "scheduled_calls"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    rep_id: Mapped[int] = mapped_column(ForeignKey("reps.id"))
+    purpose: Mapped[str] = mapped_column(String(10))  # report | briefing | resume
+    time: Mapped[str] = mapped_column(String(5))  # HH:MM local
+    repeat: Mapped[str] = mapped_column(String(10), default="once")  # once | weekdays | daily
+    run_on: Mapped[str | None] = mapped_column(String(10))  # YYYY-MM-DD, for once
+    note: Mapped[str | None] = mapped_column(Text)  # resume: what the cut-off call had captured
+    source_call_id: Mapped[str | None] = mapped_column(String(64))  # the call that caused a resume or retry
+    is_retry: Mapped[bool] = mapped_column(default=False)
+    active: Mapped[bool] = mapped_column(default=True)
+    last_run_on: Mapped[str | None] = mapped_column(String(10))
+    last_result: Mapped[str | None] = mapped_column(Text)
+    last_execution_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+    rep: Mapped[Rep] = relationship()
+
+
 class OutboundCall(Base):
     """Calls we asked Bolna to place: the evening sweep, a poor-audio callback, or a manual one."""
     __tablename__ = "outbound_calls"
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     rep_id: Mapped[int] = mapped_column(ForeignKey("reps.id"))
-    reason: Mapped[str] = mapped_column(String(10))  # sweep | callback | manual
+    reason: Mapped[str] = mapped_column(String(10))  # sweep | callback | manual | scheduled | resume
     execution_id: Mapped[str | None] = mapped_column(String(64))
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

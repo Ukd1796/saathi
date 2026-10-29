@@ -1,6 +1,9 @@
 """Calls Saathi places to reps: the evening sweep (no visit reported today), a callback after a
-debrief that came through too badly to use, and the manager's "call now" button. All three go
-through call_rep(), which records an OutboundCall row whether Bolna accepted it or not."""
+debrief that came through too badly to use, the manager's "call now" button, calls the manager
+scheduled, and a resume call when a report was cut off. All go through call_rep(), which records an
+OutboundCall row whether Bolna accepted it or not."""
+
+import re
 
 import logging
 from datetime import datetime, timedelta
@@ -10,10 +13,15 @@ from sqlalchemy import func, select
 
 from . import bolna
 from .config import TIMEZONE
-from .models import Call, Company, OutboundCall, Rep, Visit, utcnow
+from .models import Call, Company, OutboundCall, Rep, ScheduledCall, Visit, utcnow
 
 log = logging.getLogger("saathi.outbound")
 CALLBACK_GAP = timedelta(hours=1)
+CALLING_HOURS = ("09:00", "21:00")  # never ring a rep outside these (local time)
+LATE_LIMIT_MIN = 30  # a scheduled call missed by more than this (server down) is skipped, not placed late
+RETRY_AFTER = timedelta(minutes=10)
+RESUME_AFTER = timedelta(minutes=2)
+MODES = {"sweep": "sweep", "callback": "callback", "scheduled": "sweep", "briefing": "briefing", "resume": "resume"}
 TZ = ZoneInfo(TIMEZONE)
 
 
@@ -26,14 +34,14 @@ def start_of_local_day_utc():
     return start.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
 
-def call_rep(session, company: Company, rep: Rep, reason: str) -> OutboundCall:
+def call_rep(session, company: Company, rep: Rep, reason: str, mode: str | None = None, notes: str = "") -> OutboundCall:
     row = OutboundCall(company_id=company.id, rep_id=rep.id, reason=reason)
     try:
         if not company.bolna_agent_id:
             raise bolna.BolnaError("create the voice agent first")
-        mode = {"sweep": "sweep", "callback": "callback"}.get(reason, "inbound")
         res = bolna.make_call(company.bolna_agent_id, rep.phone,
-                              user_data={"rep_name": rep.name, "mode": mode, "my_doctors": "", "open_promises": ""},
+                              user_data={"rep_name": rep.name, "mode": mode or MODES.get(reason, "inbound"),
+                                         "my_doctors": "", "open_promises": "", "resume_notes": notes},
                               from_number=company.phone_number)
         row.execution_id = res.get("execution_id") or res.get("call_id")
     except bolna.BolnaError as exc:
@@ -89,3 +97,127 @@ def run_sweeps(session):
 def visits_today(session, company_id):
     return session.scalar(select(func.count(Visit.id)).where(Visit.company_id == company_id,
                                                               Visit.visited_at >= start_of_local_day_utc()))
+
+
+# ---- scheduled calls ----------------------------------------------------------------------------
+
+def in_calling_hours(hhmm: str) -> bool:
+    return CALLING_HOURS[0] <= hhmm <= CALLING_HOURS[1]
+
+
+def _due_today(sc: ScheduledCall, now) -> bool:
+    today = now.strftime("%Y-%m-%d")
+    if sc.repeat == "once":
+        return sc.run_on == today
+    if sc.repeat == "weekdays":
+        return now.weekday() < 5
+    return True  # daily
+
+
+def reported_today(session, rep_id) -> bool:
+    return session.scalar(select(func.count(Visit.id)).where(Visit.rep_id == rep_id,
+                                                             Visit.visited_at >= start_of_local_day_utc())) > 0
+
+
+def run_scheduled(session):
+    """Called every minute: place each scheduled call once, at or just after its time."""
+    now = local_now()
+    today, hhmm = now.strftime("%Y-%m-%d"), now.strftime("%H:%M")
+    due = session.scalars(select(ScheduledCall).join(Company, ScheduledCall.company_id == Company.id)
+                          .where(ScheduledCall.active.is_(True), Company.bolna_agent_id.is_not(None)))
+    for sc in due:
+        if sc.repeat == "once" and sc.run_on and sc.run_on < today:
+            sc.active, sc.last_result = False, "missed"  # the server was down at the time
+            continue
+        if not _due_today(sc, now) or sc.last_run_on == today:
+            continue
+        h, m = map(int, sc.time.split(":"))
+        late = now.hour * 60 + now.minute - (h * 60 + m)
+        if late < 0:
+            continue
+        sc.last_run_on = today
+        if sc.repeat == "once":
+            sc.active = False
+        if late > LATE_LIMIT_MIN or not in_calling_hours(hhmm):
+            sc.last_result = "skipped: outside calling hours"
+        elif sc.rep.status != "active":
+            sc.last_result = "skipped: rep has left"
+        elif sc.purpose == "report" and reported_today(session, sc.rep_id):
+            sc.last_result = "skipped: already reported today"
+        else:
+            row = call_rep(session, session.get(Company, sc.company_id), sc.rep,
+                           "resume" if sc.purpose == "resume" else "scheduled",
+                           mode={"report": "sweep"}.get(sc.purpose, sc.purpose), notes=sc.note or "")
+            sc.last_execution_id = row.execution_id
+            sc.last_result = f"failed: {row.error}" if row.error else "called"
+    session.commit()
+
+
+def schedule_once(session, company_id, rep_id, purpose, after: timedelta, note=None, source_call_id=None, is_retry=False):
+    at = local_now() + after
+    sc = ScheduledCall(company_id=company_id, rep_id=rep_id, purpose=purpose, time=at.strftime("%H:%M"),
+                       repeat="once", run_on=at.strftime("%Y-%m-%d"), note=note,
+                       source_call_id=source_call_id, is_retry=is_retry)
+    session.add(sc)
+    session.commit()
+    return sc
+
+
+NO_ANSWER = {"no-answer", "busy", "failed", "canceled", "call-disconnected", "not-answered"}
+
+
+def maybe_retry(session, call: Call):
+    """A scheduled call the rep didn't pick up gets one more try ten minutes later."""
+    if (call.status or "").lower() not in NO_ANSWER:
+        return None
+    sc = session.scalar(select(ScheduledCall).where(ScheduledCall.last_execution_id == call.id))
+    if sc is None or sc.is_retry:
+        return None
+    if session.scalar(select(ScheduledCall).where(ScheduledCall.source_call_id == call.id)):
+        return None  # webhooks repeat; retry once
+    return schedule_once(session, sc.company_id, sc.rep_id, sc.purpose, RETRY_AFTER, note=sc.note,
+                         source_call_id=call.id, is_retry=True)
+
+
+# ---- reports cut off before the read-back ---------------------------------------------------------
+
+CLOSED = re.compile(r"record ho gaya|रिकॉर्ड हो गया|it'?s recorded|baad mein call|बाद में call|call back later|"
+                    r"wrong number|galti ho gayi|गलती हो गई|dhanyavaad|धन्यवाद|thank you", re.I)
+
+
+def cut_off(call: Call) -> bool:
+    """The rep was mid-report and the line dropped: they hung up, the call ran long enough to have
+    started, and Saathi never got to its closing line."""
+    if call.call_type == "briefing" or call.rep is None or (call.duration_s or 0) < 15:
+        return False
+    raw = call.raw or {}
+    if (raw.get("termination_reason") or "") not in ("user_hung_up", "call-disconnected", "network_error"):
+        return False
+    agent_lines = [l for l in (call.transcript or "").splitlines() if l.startswith("assistant:")]
+    user_lines = [l for l in (call.transcript or "").splitlines() if l.startswith("user:")]
+    return bool(user_lines) and not any(CLOSED.search(l) for l in agent_lines[-2:])
+
+
+def resume_notes(call: Call) -> str:
+    """What the cut-off call already captured, for the agent to read back on the resume call."""
+    from .extraction import parse_visit
+    fields = parse_visit(call.extracted) or {}
+    parts = []
+    for key, label in (("doctor_name", "doctor"), ("area", "area"), ("products_discussed", "discussed"),
+                       ("samples", "samples"), ("orders", "orders"), ("chemist_name", "chemist"),
+                       ("stock_outs", "stock-outs"), ("promises", "promises"), ("next_visit", "next visit")):
+        v = fields.get(key)
+        if isinstance(v, list):  # samples/orders are (name, qty) pairs, the rest plain strings
+            v = ", ".join(f"{x[0]} {x[1]}" if isinstance(x, tuple) else str(x) for x in v)
+        if v:
+            parts.append(f"{label}: {v}")
+    return "; ".join(parts)
+
+
+def maybe_resume(session, company: Company, call: Call):
+    if not cut_off(call):
+        return None
+    if session.scalar(select(ScheduledCall).where(ScheduledCall.source_call_id == call.id)):
+        return None
+    return schedule_once(session, company.id, call.rep_id, "resume", RESUME_AFTER,
+                         note=resume_notes(call), source_call_id=call.id)

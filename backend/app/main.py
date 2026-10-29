@@ -6,7 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 
 from .db import SessionLocal, init_db
-from .outbound import run_sweeps
+from .outbound import run_scheduled, run_sweeps
 from .routers import account, bolna_hooks, dashboard
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
@@ -17,6 +17,7 @@ def sweep_tick():
     try:
         with SessionLocal() as session:
             run_sweeps(session)
+            run_scheduled(session)
     except Exception:  # never let one bad tick kill the scheduler
         log.exception("sweep tick failed")
 
