@@ -9,8 +9,11 @@ class Base(DeclarativeBase):
 
 
 def make_engine(url=DATABASE_URL):
-    args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    return create_engine(url, connect_args=args)
+    if url.startswith("sqlite"):
+        return create_engine(url, connect_args={"check_same_thread": False})
+    # Railway and Neon hand out postgres:// or postgresql:// URLs; we use the psycopg 3 driver.
+    url = url.replace("postgres://", "postgresql://", 1).replace("postgresql://", "postgresql+psycopg://", 1)
+    return create_engine(url, pool_pre_ping=True)
 
 
 engine = make_engine()

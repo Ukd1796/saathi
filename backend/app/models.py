@@ -106,7 +106,7 @@ class NameAlias(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     kind: Mapped[str] = mapped_column(String(10))  # product | doctor | chemist | area
-    heard: Mapped[str] = mapped_column(String(120))  # normalised (names.key)
+    heard: Mapped[str] = mapped_column(String(255))  # normalised (names.key)
     target: Mapped[str] = mapped_column(String(120))  # canonical name
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
@@ -129,7 +129,7 @@ class Call(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
     processed_at: Mapped[datetime | None]
-    process_note: Mapped[str | None] = mapped_column(String(200))
+    process_note: Mapped[str | None] = mapped_column(Text)
 
     rep: Mapped[Rep | None] = relationship()
     visit: Mapped["Visit | None"] = relationship(back_populates="call")
@@ -142,13 +142,13 @@ class Visit(Base):
     call_id: Mapped[str] = mapped_column(ForeignKey("calls.id"), unique=True)
     rep_id: Mapped[int | None] = mapped_column(ForeignKey("reps.id"))
     doctor_id: Mapped[int | None] = mapped_column(ForeignKey("doctors.id"))
-    doctor_raw: Mapped[str | None] = mapped_column(String(120))
-    area: Mapped[str | None] = mapped_column(String(80))
+    doctor_raw: Mapped[str | None] = mapped_column(Text)
+    area: Mapped[str | None] = mapped_column(String(200))
     chemist_id: Mapped[int | None] = mapped_column(ForeignKey("chemists.id"))
-    chemist_raw: Mapped[str | None] = mapped_column(String(120))
+    chemist_raw: Mapped[str | None] = mapped_column(Text)
     products_discussed: Mapped[list] = mapped_column(JSON, default=list)
     feedback: Mapped[str | None] = mapped_column(Text)
-    next_visit_raw: Mapped[str | None] = mapped_column(String(80))
+    next_visit_raw: Mapped[str | None] = mapped_column(Text)
     unmatched: Mapped[list] = mapped_column(JSON, default=list)  # [{kind, heard, suggestion}]
     visited_at: Mapped[datetime] = mapped_column(default=utcnow)
 
@@ -168,7 +168,7 @@ class VisitItem(Base):
     visit_id: Mapped[int] = mapped_column(ForeignKey("visits.id"))
     kind: Mapped[str] = mapped_column(String(10))  # sample | order
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
-    product_raw: Mapped[str] = mapped_column(String(80))
+    product_raw: Mapped[str] = mapped_column(Text)
     quantity: Mapped[int | None]
 
     product: Mapped[Product | None] = relationship()
@@ -180,7 +180,7 @@ class StockOut(Base):
     visit_id: Mapped[int] = mapped_column(ForeignKey("visits.id"))
     chemist_id: Mapped[int | None] = mapped_column(ForeignKey("chemists.id"))
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
-    product_raw: Mapped[str] = mapped_column(String(80))
+    product_raw: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
     product: Mapped[Product | None] = relationship()
@@ -211,7 +211,7 @@ class OutboundCall(Base):
     rep_id: Mapped[int] = mapped_column(ForeignKey("reps.id"))
     reason: Mapped[str] = mapped_column(String(10))  # sweep | callback | manual
     execution_id: Mapped[str | None] = mapped_column(String(64))
-    error: Mapped[str | None] = mapped_column(String(300))
+    error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
     rep: Mapped[Rep] = relationship()
