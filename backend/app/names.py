@@ -123,7 +123,7 @@ def spoken(text):
 
 def key(text, person=False):
     """Normalised form used for exact and alias lookups: lowercase letters and digits only."""
-    text = to_latin(text)
+    text = to_latin(TITLE.sub("", text) if person else text)
     if person:
         text = TITLE.sub("", text)
     return re.sub(r"[^a-z0-9]", "", text.lower())
@@ -154,7 +154,7 @@ class Match:
 
 
 def score(heard, candidate, person=False):
-    h, c = to_latin(heard), candidate
+    h, c = to_latin(TITLE.sub("", heard) if person else heard), candidate  # "डॉक्टर" before it becomes "doktar"
     if person:
         h, c = TITLE.sub("", h), TITLE.sub("", c)
     hn, cn = _numbers(h), _numbers(c)

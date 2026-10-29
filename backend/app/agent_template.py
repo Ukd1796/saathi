@@ -110,25 +110,13 @@ def company_names(session, company_id):
 
 
 def examples(names: dict) -> dict:
-    """Example names for the prompt, taken from this company's own lists so no company's agent is
-    nudged towards another company's doctors or products. Neutral wording when a list is empty."""
-    doctors = [d for d in names["doctors"] if names["doctor_areas"].get(d)] or names["doctors"]
-    doctor = doctors[0] if doctors else "Dr Kumar"
-    area = names["doctor_areas"].get(doctor) or (names["areas"][0] if names["areas"] else "the area")
-    chemists = names["chemists"]
-    chemist = next((c for c in chemists if names["chemist_areas"].get(c) == area), chemists[0] if chemists else "the chemist")
-    products = names["products"]
-    with_strength = [p for p in products if re.search(r"\d", p)] or products or ["the product"]
-    product, other = with_strength[0], (with_strength[1:] or products[1:] or with_strength)[0]
-    stock = next((p for p in products if p not in (product, other)), other)
-    # Two products sharing a name ("Telma 40" / "Telma H") are the real "which one?" case; else any two.
-    by_base = {}
-    for p in products:
-        by_base.setdefault(p.split()[0].lower(), []).append(p)
-    pair = next((v[:2] for v in by_base.values() if len(v) > 1), [product, other])
-    return {"EX_DOCTOR": doctor, "EX_AREA": area, "EX_CHEMIST": chemist, "EX_STOCK": stock,
-            "EX_PRODUCT": product, "EX_PRODUCT_SAY": spoken(product), "EX_OTHER_SAY": spoken(other),
-            "EX_PAIR_SAY": f"{spoken(pair[0])} ya {spoken(pair[1])}"}
+    """Placeholders for the examples in the prompt. They are deliberately not real names: on a call
+    the model couldn't follow, it read realistic example names (the company's own doctors and
+    products) back to the rep as if they had said them. Company names belong in the Known names
+    list and the speech-to-text keywords, never in examples."""
+    return {"EX_DOCTOR": "Dr <name>", "EX_AREA": "<area>", "EX_CHEMIST": "<chemist>", "EX_STOCK": "<product>",
+            "EX_PRODUCT": "<product> 40", "EX_PRODUCT_SAY": "<product> forty", "EX_OTHER_SAY": "<product> six twenty five",
+            "EX_PAIR_SAY": "<product> forty ya <product> H"}
 
 
 def build_prompt(company: Company, names: dict) -> str:
