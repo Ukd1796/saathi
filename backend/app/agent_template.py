@@ -70,7 +70,10 @@ def build_prompt(company: Company, names: dict) -> str:
                            ("CHEMISTS", names["chemists"]), ("AREAS", names["areas"])):
         shown = values[:MAX_PROMPT_NAMES]
         text = text.replace(f"[[{marker}]]", ", ".join(shown) + (" (and more)" if len(values) > len(shown) else "") or "none")
-    return text.replace("[[COMPANY]]", company.name)
+    followups = (' If the MR gave a next-visit day, add "Us din subah main aapko briefing ke liye call karungi." / '
+                 '"I\'ll call you that morning with a briefing." If they reported a stock-out, add "Stock-out ki khabar '
+                 'manager tak pahunch jayegi." / "Your manager will hear about the stock-out."') if company.auto_followup else ""
+    return text.replace("[[FOLLOWUPS]]", followups).replace("[[COMPANY]]", company.name)
 
 
 def keywords(names: dict) -> str:

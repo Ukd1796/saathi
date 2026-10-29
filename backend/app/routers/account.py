@@ -9,12 +9,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import agent_template, bolna, importer
-from ..auth import admin_user, check_password, current_user, end_session, hash_password, start_session
+from ..auth import (Scope, admin_user, check_password, current_user, end_session, hash_password, start_session,
+                    team_scope)
 from ..config import PUBLIC_BASE_URL
 from ..db import get_session
-from ..models import (Call, Company, Doctor, NameAlias, OutboundCall, Product, Promise, Rep, StockOut, User,
+from ..models import (Action, Call, Company, Doctor, NameAlias, OutboundCall, Product, Promise, Rep, StockOut, User,
                       Visit, VisitItem, utcnow)
-from ..outbound import call_rep
+from ..outbound import call_rep, in_calling_hours
 
 router = APIRouter(prefix="/api")
 
@@ -35,8 +36,14 @@ class Login(BaseModel):
 def me_json(user: User):
     c = user.company
     return {"id": user.id, "name": user.name, "email": user.email, "role": user.role, "phone": user.phone,
+            "team_size": len([r for r in c_reps(user)]) if user.role == "manager" else None,
             "company": {"id": c.id, "name": c.name, "agent_id": c.bolna_agent_id, "phone_number": c.phone_number,
-                        "sweep_time": c.sweep_time}}
+                        "sweep_time": c.sweep_time, "auto_followup": c.auto_followup, "followup_time": c.followup_time}}
+
+
+def c_reps(user: User):
+    from sqlalchemy.orm import object_session
+    return object_session(user).scalars(select(Rep).where(Rep.manager_user_id == user.id, Rep.status == "active"))
 
 
 @router.post("/auth/signup")
@@ -133,7 +140,7 @@ def _row_json(kind, r):
 
 
 @router.get("/data/list/{kind}")
-def data_list(kind: str, user: User = Depends(current_user), session: Session = Depends(get_session)):
+def data_list(kind: str, user: User = Depends(admin_user), session: Session = Depends(get_session)):
     model = _model(kind)
     rows = session.scalars(select(model).where(model.company_id == user.company_id).order_by(model.name)).all()
     return [_row_json(kind, r) for r in rows]
@@ -226,7 +233,7 @@ def _bolna(fn, *args):
 
 
 @router.get("/agent")
-def agent_status(user: User = Depends(current_user), session: Session = Depends(get_session)):
+def agent_status(user: User = Depends(admin_user), session: Session = Depends(get_session)):
     c = user.company
     names = agent_template.company_names(session, c.id)
     return {"agent_id": c.bolna_agent_id, "synced_at": c.agent_synced_at.isoformat() if c.agent_synced_at else None,
@@ -307,6 +314,8 @@ def agent_number(body: NumberChoice, user: User = Depends(admin_user), session: 
 class Settings(BaseModel):
     sweep_time: str | None = None
     name: str | None = None
+    auto_followup: bool | None = None
+    followup_time: str | None = None
 
 
 @router.patch("/settings")
@@ -318,14 +327,137 @@ def update_settings(body: Settings, user: User = Depends(admin_user), session: S
         c.sweep_time = body.sweep_time or None
     if body.name:
         c.name = body.name.strip()
+    if body.auto_followup is not None:
+        c.auto_followup = body.auto_followup
+    if body.followup_time is not None:
+        if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", body.followup_time) or not in_calling_hours(body.followup_time):
+            raise HTTPException(422, "follow-up time must be between 09:00 and 21:00")
+        c.followup_time = body.followup_time
     session.commit()
     return me_json(user)
 
 
+# ---- users: admins add managers and give them their team ------------------------------------
+
+def _user_json(u: User, rep_ids):
+    return {"id": u.id, "name": u.name, "email": u.email, "role": u.role, "rep_ids": sorted(rep_ids)}
+
+
+def _new_password():
+    import secrets
+    return secrets.token_urlsafe(8)[:10]
+
+
+@router.get("/users")
+def list_users(user: User = Depends(admin_user), session: Session = Depends(get_session)):
+    users = session.scalars(select(User).where(User.company_id == user.company_id).order_by(User.role, User.name)).all()
+    reps = session.scalars(select(Rep).where(Rep.company_id == user.company_id, Rep.status == "active")).all()
+    team = {}
+    for r in reps:
+        if r.manager_user_id:
+            team.setdefault(r.manager_user_id, set()).add(r.id)
+    # Managers named in the reps CSV who don't have a login yet: one click to create them.
+    names = {u.name.strip().lower() for u in users}
+    suggested = {}
+    for r in reps:
+        if r.manager and not r.manager_user_id and r.manager.strip().lower() not in names:
+            suggested.setdefault(r.manager.strip(), []).append(r.id)
+    return {"users": [_user_json(u, team.get(u.id, set())) for u in users],
+            "suggested": [{"name": n, "rep_ids": ids} for n, ids in sorted(suggested.items())]}
+
+
+class UserIn(BaseModel):
+    name: str
+    email: str
+    rep_ids: list[int] = []
+
+
+class UserEdit(BaseModel):
+    name: str | None = None
+    rep_ids: list[int] | None = None
+
+
+def _assign(session, admin: User, manager: User, rep_ids):
+    reps = session.scalars(select(Rep).where(Rep.company_id == admin.company_id)).all()
+    wanted = set(rep_ids)
+    if wanted - {r.id for r in reps}:
+        raise HTTPException(404, "unknown rep")
+    for r in reps:
+        if r.id in wanted:
+            r.manager_user_id = manager.id
+        elif r.manager_user_id == manager.id:
+            r.manager_user_id = None
+
+
+@router.post("/users")
+def create_user(body: UserIn, admin: User = Depends(admin_user), session: Session = Depends(get_session)):
+    """A manager login. The password is shown once, for the admin to pass on (there is no email)."""
+    email = body.email.strip().lower()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(422, "enter a valid email")
+    if session.scalar(select(User).where(User.email == email)):
+        raise HTTPException(409, "an account with this email already exists")
+    password = _new_password()
+    manager = User(company_id=admin.company_id, name=body.name.strip() or email, email=email,
+                   password_hash=hash_password(password), role="manager")
+    session.add(manager)
+    session.flush()
+    _assign(session, admin, manager, body.rep_ids)
+    session.commit()
+    return {**_user_json(manager, body.rep_ids), "password": password}
+
+
+def _own_user(session, admin, user_id) -> User:
+    u = session.get(User, user_id)
+    if u is None or u.company_id != admin.company_id:
+        raise HTTPException(404, "no such user")
+    return u
+
+
+@router.patch("/users/{user_id}")
+def edit_user(user_id: int, body: UserEdit, admin: User = Depends(admin_user), session: Session = Depends(get_session)):
+    u = _own_user(session, admin, user_id)
+    if body.name:
+        u.name = body.name.strip()
+    if body.rep_ids is not None:
+        if u.role != "manager":
+            raise HTTPException(422, "only managers have a team")
+        _assign(session, admin, u, body.rep_ids)
+    session.commit()
+    rep_ids = session.scalars(select(Rep.id).where(Rep.manager_user_id == u.id)).all()
+    return _user_json(u, rep_ids)
+
+
+@router.post("/users/{user_id}/reset-password")
+def reset_password(user_id: int, admin: User = Depends(admin_user), session: Session = Depends(get_session)):
+    u = _own_user(session, admin, user_id)
+    if u.id == admin.id:
+        raise HTTPException(422, "change your own password from your account")
+    password = _new_password()
+    u.password_hash = hash_password(password)
+    session.commit()
+    return {"id": u.id, "password": password}
+
+
+@router.delete("/users/{user_id}")
+def delete_user(user_id: int, admin: User = Depends(admin_user), session: Session = Depends(get_session)):
+    u = _own_user(session, admin, user_id)
+    if u.id == admin.id or u.role == "admin":
+        raise HTTPException(422, "admins can't be removed here")
+    for r in session.scalars(select(Rep).where(Rep.manager_user_id == u.id)):
+        r.manager_user_id = None
+    for a in session.scalars(select(Action).where(Action.resolved_by == u.id)):
+        a.resolved_by = None  # keep the decision, drop the link to the deleted login
+    session.delete(u)
+    session.commit()
+    return {"deleted": user_id}
+
+
 @router.post("/reps/{rep_id}/call")
-def call_now(rep_id: int, user: User = Depends(current_user), session: Session = Depends(get_session)):
+def call_now(rep_id: int, scope: Scope = Depends(team_scope), session: Session = Depends(get_session)):
+    user = scope.user
     rep = session.get(Rep, rep_id)
-    if rep is None or rep.company_id != user.company_id:
+    if rep is None or rep.company_id != user.company_id or not scope.rep_ok(rep.id):
         raise HTTPException(404, "no such rep")
     row = call_rep(session, user.company, rep, "manual")
     if row.error:

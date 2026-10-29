@@ -117,7 +117,7 @@ def test_doctor_list_counts_open_and_overdue_promises(client, company):
 def test_overview_counts(client, company):
     webhook(client, company, PAYLOAD)
     o = client.get("/api/overview").json()
-    assert o["open_promises"] == 1 and o["stock_outs_week"] == 1 and o["needs_review"] == 0
+    assert o["open_promises"] == 1 and o["stock_outs_week"] == 1 and o["open_actions"] == 2  # stock-out + study
     assert o["recent_calls"][0]["note"] == "ok"
 
 
@@ -125,7 +125,7 @@ def test_overview_insights_and_visit_filters(client, company):
     webhook(client, company, PAYLOAD)
     o = client.get("/api/overview").json()
     assert len(o["trend"]) == 14 and sum(d["visits"] for d in o["trend"]) == 1
-    assert o["leaderboard"][0] == {"id": o["leaderboard"][0]["id"], "name": "Asha", "visits": 1}
+    assert o["leaderboard"][0] == {"id": o["leaderboard"][0]["id"], "name": "Asha", "visits": 1, "overdue": 0}
     assert o["top_products"] and o["top_stockouts"][0]["count"] == 1
     day = o["trend"][-1]["date"] if o["trend"][-1]["visits"] else next(d["date"] for d in o["trend"] if d["visits"])
     assert len(client.get(f"/api/visits?date_from={day}&date_to={day}").json()) == 1

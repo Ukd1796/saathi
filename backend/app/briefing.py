@@ -8,7 +8,21 @@ from sqlalchemy import select
 from .models import Chemist, Doctor, Promise, StockOut, Visit, utcnow
 from .names import spoken
 
-OVERDUE_DAYS = 7
+OVERDUE_DAYS = 7  # a promise with no date is overdue after this
+
+
+def local_today():
+    from .outbound import local_now
+    return local_now().date().isoformat()
+
+
+def is_overdue(p, today=None) -> bool:
+    """Past the day the rep said ("Monday ko dunga"), or a week old when they gave no day."""
+    if p.status != "open":
+        return False
+    if p.due_on:
+        return p.due_on < (today or local_today())
+    return (utcnow() - p.created_at).days > OVERDUE_DAYS
 STOCKOUT_DAYS = 14
 
 
@@ -51,8 +65,8 @@ def doctor_brief(session, doctor: Doctor) -> dict:
     else:
         lines.append("No earlier visits recorded for this doctor.")
     for p in promises:
-        overdue = (utcnow() - p.created_at).days > OVERDUE_DAYS
-        lines.append(f"{'OVERDUE promise' if overdue else 'Open promise'} ({_ago(p.created_at)}): {p.text}")
+        due = f", due {p.due_on}" if p.due_on else ""
+        lines.append(f"{'OVERDUE promise' if is_overdue(p) else 'Open promise'} ({_ago(p.created_at)}{due}): {p.text}")
     stock_line = ("Out of stock nearby: " + ", ".join(f"{s['product']} at {s['chemist']}" for s in stock_outs) + "."
                   if stock_outs else "")
     # The voice version keeps chemist news back unless the rep asks, and has no digits to misread.
@@ -67,6 +81,6 @@ def doctor_brief(session, doctor: Doctor) -> dict:
         "visits": [{"id": v.id, "visited_at": v.visited_at.isoformat(), "rep": v.rep.name if v.rep else None,
                     "feedback": v.feedback} for v in visits],
         "open_promises": [{"id": p.id, "text": p.text, "created_at": p.created_at.isoformat(),
-                           "overdue": (utcnow() - p.created_at).days > OVERDUE_DAYS} for p in promises],
+                           "due_on": p.due_on, "overdue": is_overdue(p)} for p in promises],
         "stock_outs_nearby": stock_outs,
     }

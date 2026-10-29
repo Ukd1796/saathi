@@ -9,7 +9,7 @@ import { Items } from "@/components/visit-bits";
 import { Avatar, Badge, Button, Card, EmptyState, ErrorNote, PageHeader, Skeleton, Stat } from "@/components/ui";
 
 type Doctor = { id: number; name: string; area: string | null; speciality: string | null; rep: string | null;
-  brief: { summary: string; open_promises: { id: number; text: string; overdue: boolean; created_at: string }[]; stock_outs_nearby: { product: string; chemist: string }[] };
+  brief: { summary: string; open_promises: { id: number; text: string; overdue: boolean; created_at: string; due_on: string | null }[]; stock_outs_nearby: { product: string; chemist: string }[] };
   visits: Visit[] };
 
 export default function DoctorPage() {
@@ -65,7 +65,7 @@ export default function DoctorPage() {
                 <div className="min-w-56 flex-1">
                   <div className="font-medium text-ink">{p.text}</div>
                   <div className="mt-0.5 flex items-center gap-2 text-xs text-muted">
-                    Promised {ago(p.created_at)}{p.overdue ? <Badge tone="bad">overdue</Badge> : <Badge tone="warn">open</Badge>}
+                    Promised {ago(p.created_at)}{p.due_on && ` · due ${new Date(p.due_on).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`}{p.overdue ? <Badge tone="bad">overdue</Badge> : <Badge tone="warn">open</Badge>}
                   </div>
                 </div>
                 <Button size="sm" variant="secondary" icon={Check} onClick={() => setPromise(p.id, "done")}>Mark done</Button>

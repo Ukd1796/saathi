@@ -106,9 +106,14 @@ export default function VisitPage() {
             </Row>
             <Row icon={MessageSquareQuote} label="Doctor's feedback">{v.feedback ? <span className="italic">&ldquo;{v.feedback}&rdquo;</span> : <span className="text-muted">–</span>}</Row>
             <Row icon={HandHeart} label="Promises">
-              {v.promises.length ? <ul className="space-y-1">{v.promises.map((p) => <li key={p.id} className="flex items-start gap-2">{p.text} <Badge tone={p.status === "done" ? "good" : "warn"}>{p.status}</Badge></li>)}</ul> : <span className="text-muted">–</span>}
+              {v.promises.length ? <ul className="space-y-1">{v.promises.map((p) => <li key={p.id} className="flex items-start gap-2">{p.text} <Badge tone={p.status === "done" ? "good" : "warn"}>{p.status}</Badge>{p.due_on && p.status === "open" && <span className="text-xs text-muted">due {new Date(p.due_on).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>}</li>)}</ul> : <span className="text-muted">–</span>}
             </Row>
-            <Row icon={CalendarClock} label="Next visit">{v.next_visit ?? <span className="text-muted">–</span>}</Row>
+            <Row icon={CalendarClock} label="Next visit">
+              {v.next_visit ?? <span className="text-muted">–</span>}
+              {v.followup && <div className="mt-1 text-xs text-brand">{v.followup.active
+                ? `Saathi will call ${v.rep ?? "the rep"} on ${new Date(v.followup.run_on).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} at ${v.followup.time} with this doctor's briefing`
+                : `Follow-up call: ${v.followup.result ?? "done"}`}</div>}
+            </Row>
             {v.unmatched.length > 0 && (
               <Row icon={AlertTriangle} label="Not on your lists">
                 <ul className="space-y-1">{v.unmatched.map((u) => <li key={u.kind + u.heard}><Badge tone="coral">{u.kind}</Badge> &ldquo;{u.heard}&rdquo;{u.suggestion && <span className="text-muted">: maybe {u.suggestion}</span>}</li>)}</ul>

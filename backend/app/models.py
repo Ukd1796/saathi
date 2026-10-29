@@ -36,6 +36,8 @@ class Company(Base):
     phone_number: Mapped[str | None] = mapped_column(String(20))
     webhook_secret: Mapped[str] = mapped_column(String(64), default=token)
     tool_token: Mapped[str] = mapped_column(String(64), default=token)  # Bolna -> our tools/lookup
+    auto_followup: Mapped[bool] = mapped_column(default=True)  # Saathi calls on the next-visit day
+    followup_time: Mapped[str] = mapped_column(String(5), default="09:30")
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
@@ -61,7 +63,8 @@ class Rep(Base):
     name: Mapped[str] = mapped_column(String(120))
     phone: Mapped[str] = mapped_column(String(20))  # E.164, e.g. +919876543210
     area: Mapped[str | None] = mapped_column(String(200))  # territory; several areas separated by ";"
-    manager: Mapped[str | None] = mapped_column(String(120))
+    manager: Mapped[str | None] = mapped_column(String(120))  # as written in the CSV
+    manager_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)  # the manager's login
     status: Mapped[str] = mapped_column(String(10), default="active")  # active | left
 
     @property
@@ -196,10 +199,34 @@ class Promise(Base):
     doctor_id: Mapped[int | None] = mapped_column(ForeignKey("doctors.id"))
     text: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(10), default="open")  # open | done
+    due_on: Mapped[str | None] = mapped_column(String(10))  # YYYY-MM-DD, when the rep said when
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     closed_at: Mapped[datetime | None]
 
     visit: Mapped["Visit"] = relationship(back_populates="promises")
+    doctor: Mapped[Doctor | None] = relationship()
+
+
+class Action(Base):
+    """Something a call produced that a manager should act on: a stock-out near prescribers, or a
+    material request (study, literature, samples) to approve. Nothing is ever sent to a doctor."""
+    __tablename__ = "actions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # stockout | material
+    status: Mapped[str] = mapped_column(String(10), default="open")  # open | approved | declined | done
+    rep_id: Mapped[int | None] = mapped_column(ForeignKey("reps.id"), index=True)
+    doctor_id: Mapped[int | None] = mapped_column(ForeignKey("doctors.id"))
+    visit_id: Mapped[int | None] = mapped_column(ForeignKey("visits.id"))
+    promise_id: Mapped[int | None] = mapped_column(ForeignKey("promises.id"))
+    chemist_id: Mapped[int | None] = mapped_column(ForeignKey("chemists.id"))
+    title: Mapped[str] = mapped_column(Text)
+    detail: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    resolved_at: Mapped[datetime | None]
+    resolved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+    rep: Mapped[Rep | None] = relationship()
     doctor: Mapped[Doctor | None] = relationship()
 
 

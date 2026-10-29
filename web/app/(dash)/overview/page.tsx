@@ -3,7 +3,7 @@
 import Link from "next/link";
 import {
   Activity, AlertTriangle, ArrowRight, ClipboardList, HandHeart, PackageX, PhoneCall, PhoneIncoming, PhoneOutgoing,
-  Rocket, TrendingUp, Trophy, Pill,
+  Inbox, Rocket, TrendingUp, Trophy, Pill,
 } from "lucide-react";
 import { ago, useApi } from "@/lib/api";
 import { useMe, useSetupProgress } from "@/components/shell";
@@ -16,7 +16,8 @@ type Overview = {
   recent_calls: { id: string; status: string; rep: string | null; direction: string | null; call_type: string | null;
     duration_s: number | null; note: string | null; visit_id: number | null; created_at: string }[];
   trend: { date: string; visits: number }[];
-  leaderboard: { id: number; name: string; visits: number }[];
+  leaderboard: { id: number; name: string; visits: number; overdue: number }[];
+  open_actions: number;
   top_products: { name: string; count: number }[];
   top_stockouts: { name: string; count: number }[];
 };
@@ -51,6 +52,7 @@ export default function OverviewPage() {
   const { data: o } = useApi<Overview>("/overview", 5000);
 
   const attention = o ? [
+    o.open_actions > 0 && { href: "/actions", icon: Inbox, text: `${o.open_actions} action${o.open_actions > 1 ? "s" : ""} waiting: approvals and alerts from calls`, tone: "coral" as const },
     o.overdue_promises > 0 && { href: "/doctors?view=overdue", icon: HandHeart, text: `${o.overdue_promises} promise${o.overdue_promises > 1 ? "s are" : " is"} overdue (7+ days)`, tone: "bad" as const },
     o.silent_reps.length > 0 && { href: "/reps", icon: AlertTriangle, text: `${o.silent_reps.length} rep${o.silent_reps.length > 1 ? "s haven't" : " hasn't"} reported today: ${o.silent_reps.slice(0, 3).join(", ")}${o.silent_reps.length > 3 ? "…" : ""}`, tone: "warn" as const },
   ].filter((x) => !!x) : [];
@@ -58,8 +60,8 @@ export default function OverviewPage() {
   return (
     <div>
       <PageHeader title={`${greeting()}, ${me.name.split(" ")[0]}`}
-        sub={<>Here&apos;s what your field team reported today. Updates live every 5 seconds.</>} />
-      {done < 3 && <SetupBanner done={done} />}
+        sub={<>{me.role === "manager" ? "Here's what your team reported today." : "Here's what your field team reported today."} Updates live every 5 seconds.</>} />
+      {me.role === "admin" && done < 3 && <SetupBanner done={done} />}
 
       {!o ? (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">{Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-20" />)}</div>
@@ -89,7 +91,7 @@ export default function OverviewPage() {
                   {attention.map((a) => (
                     <li key={a.href}>
                       <Link href={a.href} className="flex items-start gap-3 rounded-xl border border-line p-3 text-sm transition hover:border-brand/40 hover:bg-brand-soft/40">
-                        <span className={`mt-0.5 rounded-lg p-1.5 ${a.tone === "bad" ? "bg-bad/12 text-bad" : "bg-warn/12 text-warn"}`}><a.icon size={14} /></span>
+                        <span className={`mt-0.5 rounded-lg p-1.5 ${a.tone === "coral" ? "bg-coral-soft text-coral" : a.tone === "bad" ? "bg-bad/12 text-bad" : "bg-warn/12 text-warn"}`}><a.icon size={14} /></span>
                         <span className="flex-1 text-ink">{a.text}</span>
                         <ArrowRight size={14} className="mt-1 text-muted" />
                       </Link>
@@ -128,7 +130,7 @@ export default function OverviewPage() {
                 </ul>
               )}
             </Card>
-            <Card title="Rep leaderboard, 7 days" icon={Trophy}>
+            <Card title="Team this week" icon={Trophy} action={<span className="text-[11px] text-muted">visits · overdue</span>}>
               {o.leaderboard.length === 0 ? <div className="py-6 text-center text-sm text-muted">No reps yet.</div> : (
                 <ol className="space-y-2.5">
                   {o.leaderboard.slice(0, 8).map((r, i) => (
@@ -136,7 +138,8 @@ export default function OverviewPage() {
                       <span className={`w-5 text-center text-xs font-bold ${i < 3 && r.visits ? "text-coral" : "text-muted"}`}>{i + 1}</span>
                       <Avatar name={r.name} size="sm" />
                       <span className="flex-1 truncate text-ink">{r.name}</span>
-                      <span className="font-semibold tabular-nums text-ink">{r.visits}</span>
+                      <span className="w-8 text-right font-semibold tabular-nums text-ink">{r.visits}</span>
+                      <span className={`w-8 text-right tabular-nums ${r.overdue ? "font-semibold text-bad" : "text-muted"}`}>{r.overdue || "–"}</span>
                     </li>
                   ))}
                 </ol>

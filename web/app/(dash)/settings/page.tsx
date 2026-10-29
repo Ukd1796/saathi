@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bot, Clock, Code2, Phone, RefreshCw, TriangleAlert } from "lucide-react";
+import { Bot, Clock, Code2, Phone, PhoneForwarded, RefreshCw, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { type Agent, api, type ApiError, useApi, when } from "@/lib/api";
 import { useMe } from "@/components/shell";
@@ -61,6 +61,19 @@ export default function SettingsPage() {
 
       <Card title="Phone number" icon={Phone}>
         {a?.agent_id ? <NumberPicker linked={a.phone_number} onLinked={() => { agent.reload(); reloadMe(); }} /> : <p className="text-sm text-muted">Create the agent first.</p>}
+      </Card>
+
+      <Card title="Automatic follow-up calls" icon={PhoneForwarded}>
+        <p className="mb-3 text-sm text-muted">When a rep mentions their next visit (&ldquo;10 din baad&rdquo;, &ldquo;agle Monday&rdquo;), Saathi calls them that morning with the doctor&apos;s briefing and any open promise.</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Tabs value={me.company.auto_followup ? "on" : "off"} onChange={(v) => run(() => api("/settings", { method: "PATCH", json: { auto_followup: v === "on" } }), v === "on" ? "Follow-up calls on." : "Follow-up calls off.")}
+            options={[{ value: "on", label: "On" }, { value: "off", label: "Off" }]} />
+          {me.company.auto_followup && <>
+            <span className="text-sm text-muted">at</span>
+            <Input type="time" defaultValue={me.company.followup_time} className="w-32"
+              onBlur={(e) => e.target.value !== me.company.followup_time && run(() => api("/settings", { method: "PATCH", json: { followup_time: e.target.value } }), `Follow-up calls at ${e.target.value}.`)} />
+          </>}
+        </div>
       </Card>
 
       <Card title="Evening sweep" icon={Clock}>

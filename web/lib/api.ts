@@ -84,10 +84,18 @@ export type Me = {
   id: number;
   name: string;
   email: string;
-  role: string;
+  role: "admin" | "manager";
   phone: string | null;
-  company: { id: number; name: string; agent_id: string | null; phone_number: string | null; sweep_time: string | null };
+  team_size: number | null;
+  company: { id: number; name: string; agent_id: string | null; phone_number: string | null; sweep_time: string | null;
+    auto_followup: boolean; followup_time: string };
 };
+
+export type ActionItem = { id: string; action_id?: number; promise_id?: number; kind: "stockout" | "material" | "overdue";
+  status: string; title: string; detail: string | null; rep: string | null; doctor: string | null; doctor_id: number | null;
+  visit_id: number | null; created_at: string; resolved_at: string | null };
+
+export type UserRow = { id: number; name: string; email: string; role: "admin" | "manager"; rep_ids: number[] };
 
 export type Item = { product: string; qty: number | null; matched: boolean };
 export type Visit = {
@@ -106,7 +114,8 @@ export type Visit = {
   chemist: string | null;
   chemist_matched: boolean;
   stock_outs: string[];
-  promises: { id: number; text: string; status: string }[];
+  promises: { id: number; text: string; status: string; due_on?: string | null }[];
+  followup?: { run_on: string; time: string; active: boolean; result: string | null } | null;
   feedback: string | null;
   next_visit: string | null;
   unmatched: { kind: string; heard: string; suggestion: string | null }[];

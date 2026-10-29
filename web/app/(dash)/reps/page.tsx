@@ -5,6 +5,7 @@ import { ArrowRightLeft, CalendarClock, ClipboardList, MapPin, PhoneCall, PhoneO
 import { useState } from "react";
 import { api, type ApiError, ago, mask, useApi } from "@/lib/api";
 import { useToast } from "@/components/toast";
+import { useMe } from "@/components/shell";
 import { ScheduledList, ScheduleModal, type Schedules } from "@/components/scheduled-calls";
 import { Avatar, Badge, Button, Card, EmptyState, Label, Modal, PageHeader, Select, Skeleton, Tabs } from "@/components/ui";
 
@@ -13,6 +14,7 @@ type RepRow = { id: number; name: string; phone: string; area: string | null; ma
 
 export default function RepsPage() {
   const toast = useToast();
+  const { me } = useMe();
   const { data, reload } = useApi<RepRow[]>("/reps");
   const [show, setShow] = useState<"active" | "left">("active");
   const schedules = useApi<Schedules>("/schedules", 30000);
@@ -42,7 +44,7 @@ export default function RepsPage() {
     <div>
       <PageHeader title="Reps & handover"
         sub="Your field team. When a rep leaves, hand their doctors to someone else: every visit, open promise and briefing moves with the doctors."
-        action={<Link href="/data?tab=reps"><Button variant="secondary" icon={UserPlus}>Add reps</Button></Link>} />
+        action={me.role === "admin" && <Link href="/data?tab=reps"><Button variant="secondary" icon={UserPlus}>Add reps</Button></Link>} />
       <div className="mb-4">
         <Tabs value={show} onChange={setShow} options={[
           { value: "active", label: "Active", count: active.length }, { value: "left", label: "Left", count: all.length - active.length },
@@ -55,7 +57,7 @@ export default function RepsPage() {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-56" />)}</div>
       ) : rows.length === 0 ? (
         <Card><EmptyState icon={Users} title={show === "active" ? "No reps yet" : "No one has left"}
-          action={show === "active" && <Link href="/data?tab=reps"><Button icon={UserPlus}>Add reps</Button></Link>}>
+          action={show === "active" && me.role === "admin" && <Link href="/data?tab=reps"><Button icon={UserPlus}>Add reps</Button></Link>}>
           {show === "active" ? "Upload your reps list so Saathi recognises them when they call." : "Reps you hand over appear here."}
         </EmptyState></Card>
       ) : (

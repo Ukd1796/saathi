@@ -18,6 +18,7 @@ from .extraction import call_type, parse_visit
 from .matching import phone_key
 from .models import Call, Chemist, Doctor, Product, Promise, Rep, StockOut, Visit, VisitItem, utcnow
 from .names import Resolver
+from .actions import on_visit
 from .outbound import cut_off
 
 
@@ -158,6 +159,9 @@ def process_payload(session: Session, company_id: int, payload: dict) -> Call:
             call.process_note = f"{len(visit.unmatched)} name(s) not matched"
         else:
             call.process_note = "ok"
+        if visit is not None:
+            session.flush()  # the visit and its promises need ids before actions point at them
+            on_visit(session, visit)
         if call.rep is None:
             call.process_note += f"; unknown rep phone {call.rep_phone}"
     session.commit()

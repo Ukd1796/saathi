@@ -73,7 +73,7 @@ def test_report_call_skipped_when_rep_already_reported(client, company, live, mo
     client.post("/api/schedules", json={"rep_id": rep_id(client), "time": hhmm, "repeat": "daily"})
     with client.Session() as s:
         outbound.run_scheduled(s)
-        assert s.query(ScheduledCall).one().last_result == "skipped: already reported today"
+        assert s.query(ScheduledCall).filter_by(repeat="daily").one().last_result == "skipped: already reported today"
     assert live == []
 
 
