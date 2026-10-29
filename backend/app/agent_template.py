@@ -5,11 +5,26 @@ lookup and extractions. The voice settings copy the hand-tuned prototype agent (
 
 from sqlalchemy import select
 
-from .config import PUBLIC_BASE_URL, ROOT
+from .config import PUBLIC_BASE_URL, ROOT, VOICE
 from .models import Chemist, Company, Doctor, Product, Rep
 
 MAX_PROMPT_NAMES = 300  # beyond this, resolve_names and the per-rep list carry the load
 MAX_KEYWORDS = 50  # Bolna's transcriber keyword limit
+
+# Voices to compare on real calls; pick one with the VOICE env var and re-sync the agent.
+# Sarvam's "enhi" voices are trained on Hindi-English code-mixed speech, i.e. how MRs talk.
+VOICES = {
+    "sarvam-ishita": {"provider": "sarvam", "stream": True, "buffer_size": 150, "audio_format": "wav",
+                      "provider_config": {"model": "bulbul:v4-flash", "voice": "Ishita (Customer Expressive) [code-mixed]",
+                                          "voice_id": "ishita_enhi_customer_expressive", "language": "hi", "speed": 0.95}},
+    "sarvam-simran": {"provider": "sarvam", "stream": True, "buffer_size": 150, "audio_format": "wav",
+                      "provider_config": {"model": "bulbul:v4-flash", "voice": "Simran (Customer) [code-mixed]",
+                                          "voice_id": "simran_enhi_customer", "language": "hi", "speed": 0.95}},
+    "elevenlabs-riya": {"provider": "elevenlabs", "stream": True, "caching": True, "buffer_size": 220, "audio_format": "wav",
+                        "provider_config": {"model": "eleven_turbo_v2_5", "voice": "Riya Rao - Confident and Professional",
+                                            "voice_id": "mfMM3ijQgz8QtMeKifko", "speed": 0.9, "temperature": 0.5,
+                                            "similarity_boost": 0.6, "style": 0.0}},
+}
 
 WELCOME = "नमस्ते! साथी बोल रही हूँ। Visit report देनी है, या किसी doctor की briefing चाहिए?"
 HANGUP_MESSAGE = "Dhanyavaad!"
@@ -120,12 +135,7 @@ def agent_config(session, company: Company) -> dict:
                                        "max_tokens": 500, "temperature": 1.0, "reasoning_effort": "none",
                                        "verbosity": "low", "agent_flow_type": "streaming"},
                     },
-                    "synthesizer": {
-                        "provider": "elevenlabs", "stream": True, "caching": True, "buffer_size": 220, "audio_format": "wav",
-                        "provider_config": {"model": "eleven_turbo_v2_5", "voice": "Riya Rao - Confident and Professional",
-                                            "voice_id": "mfMM3ijQgz8QtMeKifko", "speed": 0.9, "temperature": 0.5,
-                                            "similarity_boost": 0.6, "style": 0.0},
-                    },
+                    "synthesizer": VOICES.get(VOICE, VOICES["sarvam-ishita"]),
                     "transcriber": {"provider": "deepgram", "model": "nova-3", "language": "hi", "stream": True,
                                     "encoding": "linear16", "sampling_rate": 16000, "endpointing": 900,
                                     "keywords": keywords(names)},

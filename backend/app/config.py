@@ -25,3 +25,4 @@ BOLNA_API = "https://api.bolna.ai"
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
 TIMEZONE = os.environ.get("TIMEZONE", "Asia/Kolkata")
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"
+VOICE = os.environ.get("VOICE", "sarvam-ishita")  # a key of agent_template.VOICES
