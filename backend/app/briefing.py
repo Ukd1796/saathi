@@ -1,7 +1,7 @@
 """The pre-visit briefing: what the rep (or whoever had this doctor before them) needs to
 remember before walking in. Keyed by doctor, not rep, so a handover gets the full history."""
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import select
 
@@ -65,7 +65,7 @@ def doctor_brief(session, doctor: Doctor) -> dict:
     else:
         lines.append("No earlier visits recorded for this doctor.")
     for p in promises:
-        due = f", due {p.due_on}" if p.due_on else ""
+        due = f", due {date.fromisoformat(p.due_on).strftime('%-d %b')}" if p.due_on else ""  # "due 30 Oct"
         lines.append(f"{'OVERDUE promise' if is_overdue(p) else 'Open promise'} ({_ago(p.created_at)}{due}): {p.text}")
     stock_line = ("Out of stock nearby: " + ", ".join(f"{s['product']} at {s['chemist']}" for s in stock_outs) + "."
                   if stock_outs else "")

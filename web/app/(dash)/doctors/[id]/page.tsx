@@ -2,17 +2,57 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Check, ClipboardList, HandHeart, History, Package, PackageX, RotateCcw, Sparkles } from "lucide-react";
+import { Check, ClipboardList, HandHeart, History, Package, PackageX, Pencil, RotateCcw, Sparkles } from "lucide-react";
+import { useState } from "react";
 import { ago, api, type ApiError, useApi, when, type Visit } from "@/lib/api";
 import { useToast } from "@/components/toast";
+import { useMe } from "@/components/shell";
 import { Items } from "@/components/visit-bits";
-import { Avatar, Badge, Button, Card, EmptyState, ErrorNote, PageHeader, Skeleton, Stat } from "@/components/ui";
+import { Avatar, Badge, Button, Card, EmptyState, ErrorNote, Input, Label, Modal, PageHeader, Select, Skeleton, Stat } from "@/components/ui";
 
-type Doctor = { id: number; name: string; area: string | null; speciality: string | null; rep: string | null;
+type Doctor = { id: number; name: string; area: string | null; speciality: string | null; rep: string | null; rep_id: number | null;
   brief: { summary: string; open_promises: { id: number; text: string; overdue: boolean; created_at: string; due_on: string | null }[]; stock_outs_nearby: { product: string; chemist: string }[] };
   visits: Visit[] };
 
+function EditDoctor({ doctor, onClose, onSaved }: { doctor: Doctor; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const { data: reps } = useApi<{ id: number; name: string; status: string }[]>("/reps");
+  const [form, setForm] = useState({ name: doctor.name, area: doctor.area ?? "", speciality: doctor.speciality ?? "",
+    rep_id: doctor.rep_id ? String(doctor.rep_id) : "" });
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    setBusy(true);
+    try {
+      await api(`/data/doctors/${doctor.id}`, { method: "PATCH", json: { ...form, rep_id: form.rep_id ? Number(form.rep_id) : null } });
+      toast(`${form.name} updated.`);
+      onSaved();
+    } catch (e) {
+      toast((e as ApiError).message, "bad");
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal open onClose={onClose} title={`Edit ${doctor.name}`}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy || !form.name.trim()} onClick={save}>Save</Button></>}>
+      <Label text="Name"><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus /></Label>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Label text="Area"><Input value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} placeholder="Kothrud" /></Label>
+        <Label text="Speciality"><Input value={form.speciality} onChange={(e) => setForm({ ...form, speciality: e.target.value })} placeholder="Cardiologist" /></Label>
+      </div>
+      <Label text="Covered by">
+        <Select value={form.rep_id} onChange={(e) => setForm({ ...form, rep_id: e.target.value })}>
+          <option value="">Unassigned</option>
+          {(reps ?? []).filter((r) => r.status === "active").map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </Select>
+      </Label>
+      <p className="text-xs text-muted">The name is what Saathi matches when a rep says it, so keep the spelling reps use. Re-sync the agent in Settings after renaming.</p>
+    </Modal>
+  );
+}
+
 export default function DoctorPage() {
+  const { me } = useMe();
+  const [editing, setEditing] = useState(false);
   const { id } = useParams<{ id: string }>();
   const { data: d, error, reload } = useApi<Doctor>(`/doctors/${id}`);
   const toast = useToast();
@@ -33,7 +73,9 @@ export default function DoctorPage() {
     <div className="max-w-5xl">
       <PageHeader crumbs={[{ href: "/doctors", label: "Doctors" }]}
         title={<span className="flex items-center gap-3"><Avatar name={d.name} size="lg" />{d.name}</span>}
-        sub={[d.speciality, d.area, d.rep ? `covered by ${d.rep}` : "unassigned"].filter(Boolean).join(" · ")} />
+        sub={[d.speciality, d.area, d.rep ? `covered by ${d.rep}` : "unassigned"].filter(Boolean).join(" · ")}
+        action={me.role === "admin" && <Button variant="secondary" icon={Pencil} onClick={() => setEditing(true)}>Edit</Button>} />
+      {editing && <EditDoctor doctor={d} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); reload(); }} />}
 
       <div className="mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-brand via-[#6d4fe0] to-coral p-6 text-white shadow-lg">
         <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-white/80"><Sparkles size={14} />Pre-visit briefing</div>

@@ -208,7 +208,8 @@ def get_doctor(doctor_id: int, scope: Scope = Depends(team_scope), session: Sess
         raise HTTPException(404, "no such doctor")
     visits = session.scalars(select(Visit).where(Visit.doctor_id == d.id).order_by(Visit.visited_at.desc())).all()
     return {"id": d.id, "name": d.name, "area": d.area, "speciality": d.speciality,
-            "rep": d.assigned_rep.name if d.assigned_rep else None, "brief": doctor_brief(session, d),
+            "rep": d.assigned_rep.name if d.assigned_rep else None, "rep_id": d.assigned_rep_id,
+            "brief": doctor_brief(session, d),
             "visits": [visit_json(v) for v in visits]}
 
 
