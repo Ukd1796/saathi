@@ -1,16 +1,47 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRightLeft, CalendarClock, ClipboardList, MapPin, PhoneCall, PhoneOutgoing, Stethoscope, UserPlus, Users } from "lucide-react";
+import { ArrowRightLeft, CalendarClock, ClipboardList, MapPin, Pencil, PhoneCall, PhoneOutgoing, Stethoscope, UserPlus, Users } from "lucide-react";
 import { useState } from "react";
 import { api, type ApiError, ago, mask, useApi } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { useMe } from "@/components/shell";
 import { ScheduledList, ScheduleModal, type Schedules } from "@/components/scheduled-calls";
-import { Avatar, Badge, Button, Card, EmptyState, Label, Modal, PageHeader, Select, Skeleton, Tabs } from "@/components/ui";
+import { Avatar, Badge, Button, Card, EmptyState, Input, Label, Modal, PageHeader, Select, Skeleton, Tabs } from "@/components/ui";
 
 type RepRow = { id: number; name: string; phone: string; area: string | null; manager: string | null; status: string;
   visits_7d: number; doctors: number; last_outbound: { reason: string; at: string; error: string | null } | null };
+
+/** Name, mobile, territory and manager. The mobile is how Saathi recognises the rep on a call. */
+function EditRep({ rep, onClose, onSaved }: { rep: RepRow; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const [form, setForm] = useState({ name: rep.name, phone: rep.phone.replace(/^\+91/, ""), area: rep.area ?? "", manager: rep.manager ?? "" });
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    setBusy(true);
+    try {
+      await api(`/data/reps/${rep.id}`, { method: "PATCH", json: form });
+      toast(`${form.name} updated.${form.phone !== rep.phone.replace(/^\+91/, "") ? " Saathi will recognise the new number from the next call." : ""}`);
+      onSaved();
+    } catch (e) {
+      toast((e as ApiError).message, "bad");
+      setBusy(false);
+    }
+  }
+  const field = (key: keyof typeof form, label: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
+    <Label text={label}><Input value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} {...props} /></Label>
+  );
+  return (
+    <Modal open onClose={onClose} title={`Edit ${rep.name}`}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={busy || !form.name.trim() || !form.phone.trim()} onClick={save}>Save</Button></>}>
+      {field("name", "Name", { autoFocus: true })}
+      {field("phone", "Mobile number", { inputMode: "tel", placeholder: "98xxxxxxxx" })}
+      {field("area", "Territory (separate areas with ;)", { placeholder: "Kothrud; Aundh" })}
+      {field("manager", "Reports to", { placeholder: "Rahul Desai" })}
+      <p className="text-xs text-muted">To change which manager can see this rep in Saathi, use Users. To move their doctors to someone else, use Hand over.</p>
+    </Modal>
+  );
+}
 
 export default function RepsPage() {
   const toast = useToast();
@@ -20,6 +51,7 @@ export default function RepsPage() {
   const schedules = useApi<Schedules>("/schedules", 30000);
   const [calling, setCalling] = useState<RepRow | null>(null);
   const [scheduling, setScheduling] = useState<RepRow | null>(null);
+  const [editing, setEditing] = useState<RepRow | null>(null);
   const [handover, setHandover] = useState<RepRow | null>(null);
   const [to, setTo] = useState("");
   const [busy, setBusy] = useState(false);
@@ -71,6 +103,10 @@ export default function RepsPage() {
                   <div className="text-sm tabular-nums text-muted">{mask(r.phone)}</div>
                   {r.manager && <div className="truncate text-xs text-muted">Reports to {r.manager}</div>}
                 </div>
+                {me.role === "admin" && (
+                  <button onClick={() => setEditing(r)} aria-label={`Edit ${r.name}`} title="Edit details"
+                    className="-mr-1 -mt-1 rounded-lg p-1.5 text-muted hover:bg-brand-soft hover:text-brand"><Pencil size={15} /></button>
+                )}
               </div>
               {r.area && (
                 <div className="mt-3 flex flex-wrap gap-1"><MapPin size={13} className="mt-0.5 text-muted" />
@@ -112,6 +148,8 @@ export default function RepsPage() {
         </>}>
         <p className="text-sm text-muted">Saathi will phone this rep right away and take a visit report or give a briefing. Only call real numbers you&apos;re allowed to call.</p>
       </Modal>
+
+      {editing && <EditRep key={editing.id} rep={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />}
 
       <ScheduleModal key={scheduling?.id ?? "none"} rep={scheduling} onClose={() => setScheduling(null)}
         onDone={() => { setScheduling(null); schedules.reload(); }} />
