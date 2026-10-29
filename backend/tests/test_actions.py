@@ -152,3 +152,14 @@ def test_upgrade_adds_missing_columns(tmp_path):
     with engine.connect() as c:
         assert c.execute(text("SELECT followup_time FROM companies")).scalar() == "09:30"
     db.upgrade(engine)  # running it again is a no-op
+
+
+def test_unclear_names_are_learnt_from_a_confirmed_call(client, company):
+    from conftest import tool
+    r = tool(client, company, "resolve_names", names="doctor: Mehtaa; area: ओदमे", from_number=ASHA).json()
+    area = next(x for x in r["results"] if x["kind"] == "area")
+    assert (area["best"], area["confidence"]) == ("Kothrud", "medium")  # unclear: the doctor's area, to confirm
+    assert "Dr Mehta's area" in r["message"]
+    webhook(client, company, PAYLOAD)  # the rep confirmed the read-back: Dr Mehta, Kothrud
+    again = tool(client, company, "resolve_names", names="area: ओदमे", from_number=ASHA).json()["results"][0]
+    assert (again["best"], again["confidence"]) == ("Kothrud", "high")  # learnt, no question next time

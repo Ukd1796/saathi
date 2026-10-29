@@ -16,8 +16,11 @@ from sqlalchemy.orm import Session
 
 from .extraction import call_type, parse_visit
 from .matching import phone_key
-from .models import Call, Chemist, Doctor, Product, Promise, Rep, StockOut, Visit, VisitItem, utcnow
-from .names import Resolver
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+from .models import Call, Chemist, Doctor, Product, Promise, Rep, StockOut, ToolEvent, Visit, VisitItem, utcnow
+from .names import Resolver, key, learn_alias
 from .actions import on_visit
 from .outbound import cut_off
 
@@ -110,7 +113,7 @@ def _build_visit(session, call, fields):
 
     visit = Visit(
         company_id=cid, call=call, rep=call.rep, doctor=doctor, doctor_raw=fields["doctor_name"],
-        area=area or fields["area"] or (doctor.area if doctor else None),
+        area=area or (doctor.area if doctor else None) or fields["area"],  # a garbled area loses to the doctor's
         chemist=chemist, chemist_raw=fields["chemist_name"],
         products_discussed=discussed, feedback=fields["feedback"],
         next_visit_raw=fields["next_visit"], visited_at=call.created_at or utcnow(),
@@ -162,7 +165,54 @@ def process_payload(session: Session, company_id: int, payload: dict) -> Call:
         if visit is not None:
             session.flush()  # the visit and its promises need ids before actions point at them
             on_visit(session, visit)
+            learn_from_call(session, visit)
         if call.rep is None:
             call.process_note += f"; unknown rep phone {call.rep_phone}"
     session.commit()
     return call
+
+
+def _when(raw, key_):
+    try:
+        return datetime.fromisoformat(raw[key_].replace("Z", "+00:00")).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    except (KeyError, AttributeError, TypeError, ValueError):
+        return None
+
+
+def call_events(session, call: Call):
+    """The names Saathi checked during this call (tool calls carry the rep's number, not the call id)."""
+    if not call.rep_id:
+        return []
+    raw = call.raw or {}
+    start = _when(raw, "initiated_at") or call.created_at
+    end = _when(raw, "updated_at") or (start + timedelta(seconds=(call.duration_s or 0) + 120))
+    return session.scalars(select(ToolEvent).where(ToolEvent.company_id == call.company_id, ToolEvent.rep_id == call.rep_id,
+                                                   ToolEvent.created_at >= start - timedelta(seconds=5),
+                                                   ToolEvent.created_at <= end + timedelta(seconds=5))
+                           .order_by(ToolEvent.created_at)).all()
+
+
+def learn_from_call(session, visit: Visit):
+    """The rep confirmed the read-back, so every name Saathi was unsure of during the call now has a
+    known answer: remember the heard form, and next time it resolves straight away. Learning comes
+    from the company's own calls, not from rules written in advance."""
+    names = Resolver(session, visit.company_id).names
+    final = {
+        "doctor": [visit.doctor.name] if visit.doctor else [],
+        "chemist": [visit.chemist.name] if visit.chemist else [],
+        "area": [visit.area] if visit.area in names["area"] else [],
+        "product": sorted({i.product.name for i in [*visit.items, *visit.stock_outs] if i.product}
+                          | {p for p in visit.products_discussed or [] if p in names["product"]}),
+    }
+    events = [e for e in call_events(session, visit.call) if e.tool == "resolve_names" and e.heard]
+    for kind, answers in final.items():
+        unsure = [e for e in events if e.kind == kind and e.confidence != "high"]
+        unknown = [e for e in unsure if not e.best]
+        for e in unsure:
+            if e.best and e.best in answers:
+                target = e.best  # "Dr Rao?" -> "haan": the guess was right
+            elif not e.best and len(unknown) == 1 and len(answers) == 1 and len(key(e.heard)) >= 3:
+                target = answers[0]  # one unclear name, one confirmed answer of that kind
+            else:
+                continue
+            learn_alias(session, visit.company_id, kind, e.heard, target)

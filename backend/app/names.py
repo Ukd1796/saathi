@@ -137,6 +137,7 @@ class Match:
     confidence: str = "low"
     score: float = 0.0
     alternatives: list = field(default_factory=list)
+    hint: str | None = None  # why this is the best guess, when it isn't from the name itself
 
     def as_dict(self):
         return {"heard": self.heard, "kind": self.kind, "best": self.best,
@@ -186,6 +187,8 @@ class Resolver:
         self.mine = set()
         if rep:
             self.mine = {d.name for d in doctors if d.assigned_rep_id == rep.id or (d.area and d.area in rep.areas)}
+            self.mine |= set(rep.areas)  # and the areas of their own territory
+        self.doctor_area = {d.name: d.area for d in doctors}
         self.aliases = {(a.kind, a.heard): a.target for a in
                         session.scalars(select(NameAlias).where(NameAlias.company_id == company_id))}
 
@@ -199,7 +202,7 @@ class Resolver:
             m.best, m.confidence, m.score = alias, "high", 1.0
             return m
         scored = sorted(((score(heard, n, person), n) for n in self.names[kind]), reverse=True)
-        if self.mine and person:
+        if self.mine and kind in ("doctor", "area"):
             scored = sorted(((s + (0.05 if n in self.mine else 0), n) for s, n in scored), reverse=True)
         scored = [(min(s, 1.0), n) for s, n in scored if s > 0.3]
         if not scored:
@@ -215,6 +218,18 @@ class Resolver:
             m.best = None
             m.alternatives = [n for _, n in scored[:2]]
         return m
+
+    def resolve_all(self, items):
+        """Resolve a call's names together, so they help each other: when the area is unclear but the
+        doctor is known, the doctor's area on file is the likely answer (confirm it, don't assume)."""
+        results = [self.resolve(heard, kind) for kind, heard in items]
+        doctors = [m.best for m in results if m.kind == "doctor" and m.best and m.confidence in ("high", "medium")]
+        area = self.doctor_area.get(doctors[0]) if doctors else None
+        for m in results:
+            if m.kind == "area" and m.confidence == "low" and area:
+                m.best, m.confidence, m.alternatives = area, "medium", []
+                m.hint = f"{doctors[0]}'s area"
+        return results
 
     def link(self, heard, kind):
         """Name to store on a visit: only a high-confidence match, never a guess."""

@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..briefing import doctor_brief, is_overdue
+from ..ingest import call_events
 from ..db import get_session
 from ..models import (Action, Call, Chemist, Doctor, OutboundCall, Product, Promise, Rep, ScheduledCall, StockOut,
                       ToolEvent, User, Visit, utcnow)
@@ -55,23 +56,11 @@ def visit_json(v: Visit, full=False):
 REASK = re.compile(r"dobara|दोबारा|phir se|फिर से|repeat|say that again|samajh nahi|समझ नहीं", re.I)
 
 
-def _when(raw, key):
-    try:
-        return datetime.fromisoformat(raw[key].replace("Z", "+00:00")).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
-    except (KeyError, AttributeError, TypeError, ValueError):
-        return None
-
-
 def call_quality(session, call: Call):
     """How hard the call was for the rep: names Saathi checked (and how sure it was), how often it
     asked again, and how the call ended."""
     raw = call.raw or {}
-    start = _when(raw, "initiated_at") or call.created_at
-    end = _when(raw, "updated_at") or (start + timedelta(seconds=(call.duration_s or 0) + 120))
-    events = session.scalars(select(ToolEvent).where(ToolEvent.company_id == call.company_id, ToolEvent.rep_id == call.rep_id,
-                                                     ToolEvent.created_at >= start - timedelta(seconds=5),
-                                                     ToolEvent.created_at <= end + timedelta(seconds=5))
-                             .order_by(ToolEvent.created_at)).all() if call.rep_id else []
+    events = call_events(session, call)
     lines = (call.transcript or "").splitlines()
     names = [{"kind": e.kind, "heard": e.heard, "best": e.best, "confidence": e.confidence} for e in events]
     return {

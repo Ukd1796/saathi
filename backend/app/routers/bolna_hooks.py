@@ -103,7 +103,9 @@ async def resolve_names(request: Request, company: str = "", authorization: str 
     params = await _params(request)
     resolver = Resolver(session, comp.id, _rep_for(session, comp, params))
     items = parse_items(params.get("names"))
-    results = [resolver.resolve(heard, kind).as_dict() for kind, heard in items]
+    matches = resolver.resolve_all(items)
+    results = [m.as_dict() for m in matches]
+    hints = {i: m.hint for i, m in enumerate(matches) if m.hint}
     rep = _rep_for(session, comp, params)
     session.add_all(ToolEvent(company_id=comp.id, rep_id=rep.id if rep else None, tool="resolve_names", kind=r["kind"],
                               heard=r["heard"], best=r["best"], confidence=r["confidence"]) for r in results)
@@ -112,12 +114,13 @@ async def resolve_names(request: Request, company: str = "", authorization: str 
     if not results:
         return {"results": [], "message": 'No names given. Send them as "product: Azithral 500; area: Hadapsar".'}
     lines = []
-    for r in results:
+    for i, r in enumerate(results):
         if r["confidence"] == "high":
             lines.append(f'{r["kind"]} "{r["heard"]}" = {r["best"]}, say "{spoken(r["best"])}" (high: use it)')
         elif r["confidence"] == "medium":
             alts = f' (or {", ".join(r["alternatives"])})' if r["alternatives"] else ""
-            lines.append(f'{r["kind"]} "{r["heard"]}" = probably {r["best"]}, say "{spoken(r["best"])}"{alts} (medium: confirm with the MR)')
+            why = f" ({hints[i]})" if i in hints else ""
+            lines.append(f'{r["kind"]} "{r["heard"]}" = probably {r["best"]}{why}, say "{spoken(r["best"])}"{alts} (medium: confirm with the MR in one short question)')
         else:
             lines.append(f'{r["kind"]} "{r["heard"]}" = no clear match (low: ask the MR to repeat it)')
     return {"results": results, "message": "\n".join(lines)}
