@@ -3,7 +3,7 @@
 import { MapPin, PackageCheck, PackageX, Stethoscope, Store } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ago, useApi } from "@/lib/api";
-import { Badge, Card, EmptyState, PageHeader, Select, Skeleton, Tabs } from "@/components/ui";
+import { Badge, Card, EmptyState, PageHeader, FilterSelect, Skeleton, Tabs } from "@/components/ui";
 
 type Group = { product: string; reports: number; last_seen: string; chemists: { name: string; area: string | null }[]; areas: string[]; doctors_nearby: string[] };
 
@@ -20,9 +20,7 @@ export default function StockOutsPage() {
       <PageHeader title="Stock-outs"
         sub="Products reps found missing at chemists, next to the doctors in that area who prescribe them. Every empty shelf near a prescriber is a lost sale."
         action={<>
-          <Select value={area} onChange={(e) => setArea(e.target.value)} className="w-auto min-w-36">
-            <option value="">All areas</option>{areas.map((a) => <option key={a}>{a}</option>)}
-          </Select>
+          <FilterSelect label="Area" icon={MapPin} value={area} onChange={setArea} options={areas} />
           <Tabs value={days} onChange={setDays} options={[{ value: "7", label: "7 days" }, { value: "14", label: "14 days" }, { value: "30", label: "30 days" }]} />
         </>} />
       {!data ? (

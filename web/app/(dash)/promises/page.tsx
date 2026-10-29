@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Check, HandHeart, RotateCcw } from "lucide-react";
+import { Check, HandHeart, RotateCcw, UserRound } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api, type ApiError, ago, useApi } from "@/lib/api";
 import { useToast } from "@/components/toast";
-import { Avatar, Badge, Button, Card, EmptyState, LoadingRows, PageHeader, SearchInput, Select, Table, Tabs, Td, Tr } from "@/components/ui";
+import { Avatar, Badge, Button, Card, EmptyState, LoadingRows, PageHeader, SearchInput, FilterSelect, Table, Tabs, Td, Tr } from "@/components/ui";
 
 type PromiseRow = { id: number; text: string; status: string; created_at: string; closed_at: string | null; age_days: number;
   overdue: boolean; doctor: string | null; doctor_id: number | null; rep: string | null; visit_id: number };
@@ -56,9 +56,7 @@ export default function PromisesPage() {
             { value: "done", label: "Done", count: counts.done }, { value: "all", label: "All", count: counts.all },
           ]} />
           <SearchInput value={q} onChange={setQ} placeholder="Search promise or doctor…" className="min-w-52 flex-1" />
-          <Select value={rep} onChange={(e) => setRep(e.target.value)} className="w-auto min-w-36">
-            <option value="">All reps</option>{reps.map((r) => <option key={r}>{r}</option>)}
-          </Select>
+          <FilterSelect label="Rep" icon={UserRound} value={rep} onChange={setRep} options={reps} />
         </div>
         {!data ? <LoadingRows /> : rows.length === 0 ? (
           <EmptyState icon={HandHeart} title={tab === "overdue" ? "Nothing overdue" : "No promises here"}>

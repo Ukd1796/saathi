@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Search, X, type LucideIcon } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, X, type LucideIcon } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 
 type Tone = "default" | "brand" | "coral" | "good" | "warn" | "bad";
@@ -117,14 +117,37 @@ export function ErrorNote({ error }: { error: { message: string } | null | undef
   return <div className="rounded-xl border border-bad/30 bg-bad/10 px-3 py-2 text-sm text-bad">{error.message}</div>;
 }
 
-const field = "h-9 w-full rounded-xl border border-line bg-card px-3 text-sm text-ink outline-none transition placeholder:text-muted/70 focus:border-brand focus:ring-3 focus:ring-brand/15";
+const field = "h-9 rounded-xl border border-line bg-card px-3 text-sm text-ink outline-none transition placeholder:text-muted/70 focus:border-brand focus:ring-3 focus:ring-brand/15";
+
+/** Full width unless the caller sets its own width (two w-* classes would fight). */
+const width = (className: string) => (/(^|\s)w-/.test(className) ? "" : "w-full");
 
 export function Input({ className = "", ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={`${field} ${className}`} />;
+  return <input {...props} className={`${field} ${width(className)} ${className}`} />;
 }
 
 export function Select({ className = "", children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={`${field} pr-8 ${className}`}>{children}</select>;
+  return <select {...props} className={`${field} ${width(className)} pr-8 ${className}`}>{children}</select>;
+}
+
+/** A compact filter pill: "Area: All" that turns brand-coloured once a value is picked. */
+export function FilterSelect({ label, value, onChange, options, icon: Icon }: {
+  label: string; value: string; onChange: (v: string) => void; options: string[]; icon?: LucideIcon;
+}) {
+  const active = !!value;
+  return (
+    <label className={`relative inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl border pl-3 pr-8 text-sm transition ${active ? "border-brand/40 bg-brand-soft text-brand" : "border-line bg-card text-ink hover:border-brand/30"}`}>
+      {Icon && <Icon size={14} className={active ? "text-brand" : "text-muted"} />}
+      <span className={active ? "font-medium" : "text-muted"}>{label}:</span>
+      <span className="max-w-36 truncate font-semibold">{value || "All"}</span>
+      <ChevronDown size={14} className="pointer-events-none absolute right-2.5 text-muted" />
+      <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}
+        className="absolute inset-0 cursor-pointer appearance-none opacity-0">
+        <option value="">All</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </label>
+  );
 }
 
 export function Label({ text, children }: { text: string; children: ReactNode }) {
@@ -142,7 +165,11 @@ export function SearchInput({ value, onChange, placeholder = "Search…", classN
   return (
     <div className={`relative ${className}`}>
       <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={`${field} pl-9`} />
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={`${field} w-full pl-9 pr-8`} />
+      {value && (
+        <button onClick={() => onChange("")} aria-label="Clear search"
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-muted hover:bg-soft hover:text-ink"><X size={14} /></button>
+      )}
     </div>
   );
 }

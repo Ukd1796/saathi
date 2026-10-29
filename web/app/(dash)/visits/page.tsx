@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ClipboardList, Download, MapPin } from "lucide-react";
+import { ClipboardList, Download, MapPin, UserRound } from "lucide-react";
 import { useMemo, useState } from "react";
 import { downloadCsv, isoDay, useApi, when, type Visit } from "@/lib/api";
 import { DoctorCell, Items } from "@/components/visit-bits";
-import { Avatar, Button, Card, EmptyState, LoadingRows, PageHeader, SearchInput, Select, Table, Tabs, Td, Tr } from "@/components/ui";
+import { Avatar, Button, Card, EmptyState, LoadingRows, PageHeader, SearchInput, FilterSelect, Table, Tabs, Td, Tr } from "@/components/ui";
 
 type Range = "today" | "7" | "30" | "all";
 const RANGES: { value: Range; label: string }[] = [
@@ -56,13 +56,9 @@ export default function VisitsPage() {
 
       <Card pad={false}>
         <div className="flex flex-wrap items-center gap-3 border-b border-line p-4">
-          <SearchInput value={q} onChange={setQ} placeholder="Search doctor, product, chemist…" className="min-w-56 flex-1" />
-          <Select value={rep} onChange={(e) => setRep(e.target.value)} className="w-auto min-w-36">
-            <option value="">All reps</option>{reps.map((r) => <option key={r}>{r}</option>)}
-          </Select>
-          <Select value={area} onChange={(e) => setArea(e.target.value)} className="w-auto min-w-36">
-            <option value="">All areas</option>{areas.map((a) => <option key={a}>{a}</option>)}
-          </Select>
+          <SearchInput value={q} onChange={setQ} placeholder="Search doctor, product, chemist…" className="w-full sm:w-72" />
+          <FilterSelect label="Rep" icon={UserRound} value={rep} onChange={setRep} options={reps} />
+          <FilterSelect label="Area" icon={MapPin} value={area} onChange={setArea} options={areas} />
           <Tabs value={range} onChange={setRange} options={RANGES} />
         </div>
 
