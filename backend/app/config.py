@@ -26,4 +26,4 @@ PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:8000").rst
 TIMEZONE = os.environ.get("TIMEZONE", "Asia/Kolkata")
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"
 VOICE = os.environ.get("VOICE", "sarvam-ishita")  # a key of agent_template.VOICES
-TRANSCRIBER = os.environ.get("TRANSCRIBER", "sarvam-saaras")  # a key of agent_template.TRANSCRIBERS
+TRANSCRIBER = os.environ.get("TRANSCRIBER", "deepgram-nova3")  # a key in agent_template.transcriber()

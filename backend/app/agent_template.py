@@ -49,7 +49,9 @@ def transcriber(company, names):
                            "encoding": "linear16", "sampling_rate": 16000, "endpointing": 900,
                            "keywords": keywords(names)},
     }
-    return configs.get(TRANSCRIBER, configs["sarvam-saaras"])
+    # Tested 29 Oct: Sarvam (transcribe mode, Hindi) wrote English speech in Devanagari and garbled it
+    # ("visit report" -> "बजट रिपोर्ट"), so English calls fell apart. Deepgram keeps English words in Latin.
+    return configs.get(TRANSCRIBER, configs["deepgram-nova3"])
 
 
 WELCOME = "नमस्ते! साथी बोल रही हूँ। Visit report देनी है, या किसी doctor की briefing चाहिए?"
