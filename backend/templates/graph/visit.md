@@ -1,0 +1,6 @@
+Call check_visit once now with everything the MR has said about this visit in this call, including what they just said. Fill each field from their words only; use "none" where they said there was none and "missing" where they haven't said it. Always send the doctor as you heard it, even if it sounds garbled, so it can be checked. When the MR confirmed a name Saathi asked about, send that name exactly as Saathi said it. For samples and orders, write the number in digits; if they gave no number, write "?". Stock-outs are product names only.
+Also tell check_visit about the MR's latest reply: their exact words since Saathi's last line (mr_said), which items it is about (about), whether they cut Saathi off (interrupted), and whether it is a plain yes (confirms_readback). If the MR objects to an item without giving the new value ("not that", "the promise is wrong"), put that item in about and keep its old value.
+
+Then say the line check_visit returns, exactly as given, and nothing else: no greeting, no acknowledgement, no extra words, no repeating what the MR said. If it says you already asked, say nothing. Never call check_visit twice for the same reply.
+
+If this call is finishing a report that was cut off earlier, also include what that report captured, unless the MR said it was a different visit: {{resume_notes}}

@@ -15,6 +15,8 @@ from ..ingest import find_rep, process_payload
 from ..models import Company, Doctor, Promise, Rep, ToolEvent
 from ..names import Resolver, parse_items, spoken
 from ..outbound import greeting, maybe_callback, maybe_resume, maybe_retry, rep_context
+from ..visit_check import check_visit
+from ..agent_template import VISIT_FIELDS
 
 log = logging.getLogger("saathi.bolna")
 router = APIRouter(prefix="/bolna")
@@ -121,6 +123,24 @@ async def resolve_names(request: Request, company: str = "", authorization: str 
         else:
             lines.append(f'{r["kind"]} "{r["heard"]}" = no clear match (low: ask the MR to repeat it)')
     return {"results": results, "message": "\n".join(lines)}
+
+
+@router.api_route("/tools/check_visit", methods=["GET", "POST"])
+async def check_visit_tool(request: Request, company: str = "", authorization: str = Header(default=""),
+                           session: Session = Depends(get_session)):
+    """The graph agent's single tool for a debrief: it says what Saathi says next (see visit_check)."""
+    comp = _company(session, company)
+    _check(comp.tool_token, authorization)
+    params = await _params(request)
+    rep = _rep_for(session, comp, params)
+    result = check_visit(session, comp, rep, params)
+    session.add_all(ToolEvent(company_id=comp.id, rep_id=rep.id if rep else None, tool="check_visit", kind=m["kind"],
+                              heard=m["heard"], best=m["best"], confidence=m["confidence"]) for m in result["matches"])
+    session.commit()
+    log.info("check_visit %s -> %s: %s", {k: params.get(k) for k in VISIT_FIELDS}, result["status"], result["say"])
+    if result["status"] == "repeat":
+        return {"status": "repeat", "message": "You already asked this. Say nothing and wait for the MR to answer."}
+    return {"status": result["status"], "message": f'Say exactly this and nothing else: "{result["say"]}"'}
 
 
 @router.api_route("/tools/doctor_brief", methods=["GET", "POST"])

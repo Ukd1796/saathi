@@ -2,9 +2,12 @@
 
 import copy
 
+from sqlalchemy import select
+
+from app import config
 from app.extraction import parse_visit
 from app.matching import best_match, match_person
-from app.models import Visit
+from app.models import Rep, Visit, VisitDraft
 from conftest import PAYLOAD, webhook
 
 
@@ -88,3 +91,41 @@ def test_matching_rules():
     assert best_match("pan-d", products).name == "Pan D"
     assert best_match("Pan", products) is None
     assert match_person("Doctor Rao", [N("Dr Rao")]).name == "Dr Rao"
+
+
+def graph_call(client, company, confirmed):
+    """A graph-agent call: the visit was checked live through check_visit, and the transcript the
+    extraction read is garbled ("Dr. Mehtaa", "Sharma Medicals")."""
+    with client.Session() as s:
+        rep = s.scalar(select(Rep).where(Rep.company_id == company.id))
+        s.add(VisitDraft(company_id=company.id, rep_id=rep.id, call_sid="plivo-123", confirmed=confirmed, fields={
+            "doctor_name": "Dr Mehta", "area": "Kothrud", "products_discussed": ["Telma 40", "Cardivas"],
+            "samples": [["Telma 40", 4]], "orders": [], "chemist_name": "Sharma Medical", "stock_outs": ["Cardivas"],
+            "next_visit": "next Tuesday", "feedback": None, "promises": ["Cardivas clinical study"],
+            "promises_done": [], "materials": ["Cardivas clinical study"]}))
+        s.commit()
+    payload = copy.deepcopy(PAYLOAD)
+    payload["telephony_data"]["provider_call_id"] = "plivo-123"
+    return webhook(client, company, payload)
+
+
+def test_graph_call_is_saved_from_the_confirmed_draft(client, company):
+    assert graph_call(client, company, confirmed=True).json()["note"] == "ok"  # every name linked
+    with client.Session() as s:
+        v = s.scalars(select(Visit)).one()
+        assert v.doctor.name == "Dr Mehta" and v.chemist.name == "Sharma Medical" and not v.unmatched
+
+
+def test_graph_call_without_a_confirmed_read_back_is_not_saved(client, company):
+    # the extraction says "readback_confirmed: yes", but the backend never heard a yes to its read-back
+    assert graph_call(client, company, confirmed=False).json()["note"] == "not saved: the rep didn't confirm the read-back"
+
+
+def test_experiment_call_without_a_check_is_not_saved_from_the_transcript(client, company, monkeypatch):
+    """A graph-agent call whose check never ran: the extraction says confirmed, but nothing is saved."""
+    monkeypatch.setattr(config, "EXPERIMENT_AGENT_IDS", {"graph-test-agent"})
+    payload = copy.deepcopy(PAYLOAD)
+    payload["agent_id"] = "graph-test-agent"
+    assert webhook(client, company, payload).json()["note"] == "not saved: the rep didn't confirm the read-back"
+    with client.Session() as s:
+        assert s.scalars(select(Visit)).first() is None

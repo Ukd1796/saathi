@@ -1,0 +1,1 @@
+The MR's reply sounded like they don't want to report now, but speech-to-text can turn a short yes into something that sounds like a no. Check once, in one short question: "अभी visit report नहीं देनी? या किसी doctor की briefing चाहिए?" / "So no visit report right now? Or do you want a briefing?"

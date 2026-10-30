@@ -33,15 +33,20 @@ ADDED_COLUMNS = [
     ("promises", "due_on", "VARCHAR(10)"),
     ("companies", "auto_followup", "BOOLEAN NOT NULL DEFAULT TRUE"),
     ("companies", "followup_time", "VARCHAR(5) NOT NULL DEFAULT '09:30'"),
+    ("visit_drafts", "read_back", "JSON"),
+    ("visit_drafts", "mr_said", "TEXT"),
+    ("visit_drafts", "disputes", "JSON"),
+    ("visit_drafts", "language", "VARCHAR(2)"),
 ]
 
 
 def upgrade(bind):
     from sqlalchemy import inspect, text
-    have = {t: {c["name"] for c in inspect(bind).get_columns(t)} for t in {t for t, _, _ in ADDED_COLUMNS}}
+    tables = set(inspect(bind).get_table_names())  # a table create_all only just made already has every column
+    have = {t: {c["name"] for c in inspect(bind).get_columns(t)} for t in {t for t, _, _ in ADDED_COLUMNS} & tables}
     with bind.begin() as conn:
         for table, column, ddl in ADDED_COLUMNS:
-            if column not in have[table]:
+            if table in have and column not in have[table]:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
 
 

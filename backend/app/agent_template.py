@@ -122,8 +122,8 @@ def examples(names: dict) -> dict:
             "EX_PAIR_SAY": "<product> forty ya <product> H"}
 
 
-def build_prompt(company: Company, names: dict) -> str:
-    text = (ROOT / "templates" / "agent_prompt.md").read_text()
+def fill(text: str, company: Company, names: dict) -> str:
+    """Fill a prompt template's [[MARKERS]]: name lists, placeholder examples, follow-ups, company."""
     for kind, limit in PROMPT_LIMITS.items():
         values = names[kind]
         shown = values[:limit]
@@ -134,6 +134,10 @@ def build_prompt(company: Company, names: dict) -> str:
                  '"I\'ll call you that morning with a briefing." If they reported a stock-out, add "Stock-out ki khabar '
                  'manager tak pahunch jayegi." / "Your manager will hear about the stock-out."') if company.auto_followup else ""
     return text.replace("[[FOLLOWUPS]]", followups).replace("[[COMPANY]]", company.name)
+
+
+def build_prompt(company: Company, names: dict) -> str:
+    return fill((ROOT / "templates" / "agent_prompt.md").read_text(), company, names)
 
 
 def keywords(names: dict) -> str:
@@ -158,7 +162,8 @@ def _tool(name, description, params, path, company):
     )
 
 
-def api_tools(company):
+def api_tools(company, graph: bool = False):
+    """The graph agent gets check_visit instead of resolve_names, each tool scoped to its one node."""
     tools = [
         _tool("resolve_names",
               "Check doctor, area, chemist and product names against the company's records before the read-back. "
@@ -170,12 +175,135 @@ def api_tools(company):
               {"doctor": "The doctor's name as the MR said it"},
               "/bolna/tools/doctor_brief", company),
     ]
-    return {"tools": [t for t, _ in tools], "tools_params": {t["name"]: p for t, p in tools}}
+    if graph:
+        tools = [check_visit_tool(company), tools[1]]
+    params = {t["name"]: p for t, p in tools}
+    for name, nodes in (GRAPH_TOOL_SCOPES if graph else {}).items():
+        params[name] = {**params[name], "scope": "node", "nodes": nodes}
+    return {"tools": [t for t, _ in tools], "tools_params": params}
 
 
-def agent_config(session, company: Company) -> dict:
+# ---- graph agent (experiment) ----------------------------------------------------------------------
+# The same call split into nodes, one job each (Bolna graph agents). The debrief has one tool,
+# check_visit: the agent sends everything heard so far, the backend resolves the names and returns the
+# one line to say next (a question, or the whole read-back). It keeps the visit as a draft per call;
+# the draft the rep said yes to is what ingest saves, so the visit has the names checked on the call.
+VISIT_FIELDS = {
+    "doctor": "The doctor the MR met, as they said it, even if it sounds garbled",
+    "area": "The area of the visit",
+    "products": "Products discussed with the doctor, separated by semicolons, with strength",
+    "samples": 'Samples given, "<product>: <number in digits>" separated by semicolons; "<product>: ?" if they gave no number',
+    "chemist": "The chemist near the doctor the MR visited",
+    "orders": 'Orders at the chemist, "<product>: <number in digits>" separated by semicolons',
+    "stock_outs": "Product names out of stock at that chemist, separated by semicolons, no quantities",
+    "feedback": "What the doctor said about the products, naming the product, in the MR's language",
+    "promise": "What the MR promised the doctor, with any timing, in the MR's language",
+    "next_visit": "When the next visit is, in the MR's language",
+}
+GRAPH_TOOL_SCOPES = {"check_visit": ["visit"], "get_doctor_brief": ["briefing"]}
+# Reps pause mid-list ("Pan D aur... Amlong"); at 900 ms the turn ended inside the sentence (graph G1).
+GRAPH_ENDPOINTING_MS = 1200
+# Back on mini: on 30 Oct gpt-5.4 made the opening re-ask "report or briefing?" on a clear answer and was
+# slower (0.85-1.6 s a turn). A stronger model gets tested again on its own, one change at a time.
+GRAPH_MODEL = "gpt-5.4-mini"
+STOP = "The MR wants to stop or call back later"
+# The call ends on Saathi's own closing line, which check_visit gives only after a yes to its read-back.
+GRAPH_HANGUP_PROMPT = """End the call only in one of these cases:
+1. Saathi's last line said the report is recorded ("record हो गया" / "it's recorded").
+2. Saathi gave a briefing and the MR has nothing else.
+Never end the call because of anything the MR said; the conversation handles that."""
+
+
+def check_visit_tool(company):
+    fields = {k: f'{d}. Only what the MR said in this call; the latest value if they corrected it; "none" if they '
+                 f'said there was none; "missing" if not said yet.' for k, d in VISIT_FIELDS.items()}
+    fields["language"] = 'The language of the MR\'s latest turn: "en" for English, "hi" for Hindi or Hinglish'
+    fields["confirms_readback"] = ('"yes" only if the MR\'s latest reply is a plain yes to Saathi\'s last line, with '
+                                   'no correction, "but", new detail or question; otherwise "no"')
+    fields["promise_material"] = ('"yes" if the promise is to give the doctor material (a study, leaflet, chart, '
+                                  'literature, samples); otherwise "no"')
+    fields["mr_said"] = ("The MR's words since Saathi's last line, copied exactly from the transcript; empty if the "
+                         "MR has said nothing since")
+    fields["about"] = ("Which visit items the MR's latest reply corrects, adds to or says is wrong, comma-separated, "
+                       "from: " + ", ".join(VISIT_FIELDS) + '; "none" if it is only a yes or no')
+    fields["interrupted"] = '"yes" if the MR cut Saathi off in the middle of its last line; otherwise "no"'
+    tool, params = _tool("check_visit",
+                         "Send everything the MR has said about this visit so far. Returns the one line Saathi says "
+                         "next: a single question, the full read-back, or the closing line. Call it again after "
+                         "every reply from the MR.", fields, "/bolna/tools/check_visit", company)
+    params["param"]["call_sid"] = "%(call_sid)s"  # filled in by Bolna; keeps one draft per call
+    return tool, params
+
+
+def _edge(to, condition):
+    return {"to_node_id": to, "condition_type": "llm", "condition": condition}
+
+
+def _end(node_id, hi, en):
+    return {"id": node_id, "node_type": "static", "static_message": {"hi": hi, "en": en},
+            "function_call": "end_call", "edges": []}
+
+
+def graph_nodes(company: Company, names: dict) -> list[dict]:
+    prompt = lambda node: fill((ROOT / "templates" / "graph" / f"{node}.md").read_text(), company, names)
+    mode = lambda value, to: {"to_node_id": to, "condition_type": "expression",
+                              "expression": {"logic": "and", "conditions": [
+                                  {"variable": "recipient_data.mode", "operator": "eq", "value": value}]}}
+    return [
+        {"id": "route", "node_type": "router", "description": "Start where the reason for this call says",
+         "edges": [mode("resume", "resume"), mode("briefing", "briefing"), mode("sweep", "listen"),
+                   {"to_node_id": "opening", "condition_type": "unconditional"}]},
+        {"id": "opening", "prompt": prompt("opening"), "edges": [
+            _edge("listen", "The MR wants to report a visit, or has started describing one"),
+            _edge("briefing", "The MR wants a briefing about a doctor they are about to meet"),
+            _edge("confirm_stop", "The MR's reply sounds like they don't want to report or be briefed now"),
+            _edge("wrong_number", "The caller is not a medical rep (wrong number)")]},
+        {"id": "confirm_stop", "prompt": prompt("confirm_stop"), "edges": [
+            _edge("listen", "The MR does want to report a visit"),
+            _edge("briefing", "The MR wants a briefing"),
+            _edge("later", "The MR confirms they don't want anything now")]},
+        # After the rep's message the check always runs (a rule, not the router's judgement: on 30 Oct
+        # the router kept the call here and the agent claimed "record हो गया" with no check). It is
+        # unconditional because a `_node_turns >= 1` rule is checked before the current message is
+        # counted, so it fired one message late. A half-told visit just gets the next missing item asked;
+        # stopping is handled in `visit`.
+        {"id": "listen", "prompt": prompt("listen"), "edges": [
+            {"to_node_id": "visit", "condition_type": "unconditional", "priority": 1}]},
+        {"id": "visit", "prompt": prompt("visit"), "function_call": "check_visit", "edges": [
+            _edge("visit", "The MR replied to Saathi: answered, confirmed, corrected or added something"),
+            _edge("later", STOP)]},
+        {"id": "briefing", "prompt": prompt("briefing"), "edges": [
+            _edge("listen", "The MR now wants to report a visit"),
+            _edge("bye", "The MR has nothing else")]},
+        {"id": "resume", "prompt": prompt("resume"), "edges": [
+            _edge("visit", "The MR confirmed the earlier notes and told the rest"),
+            _edge("listen", "The MR says the notes are wrong or wants to report a different visit"),
+            _edge("later", STOP)]},
+        _end("later", "ठीक है, बाद में call कर लीजिए। धन्यवाद!", "No problem, call back later. Thank you!"),
+        _end("bye", "All the best! धन्यवाद!", "All the best! Thank you!"),
+        _end("wrong_number", "माफ़ कीजिए, गलती हो गई। धन्यवाद!", "Sorry, wrong number. Thank you!"),
+    ]
+
+
+def graph_llm_config(company: Company, names: dict) -> dict:
+    return {"provider": "openai", "family": "openai", "model": GRAPH_MODEL, "max_tokens": 500,
+            "temperature": 1.0,  # Bolna requires 1 for reasoning models (gpt-5.x)
+            "reasoning_effort": "none", "verbosity": "low", "agent_flow_type": "streaming",
+            "routing_provider": "openai", "routing_model": GRAPH_MODEL, "routing_reasoning_effort": "none",
+            "agent_information": fill((ROOT / "templates" / "graph" / "agent_information.md").read_text(), company, names),
+            "routing_instructions": "You route a medical rep's call with Saathi, their visit-report assistant. "
+                                    "Judge the meaning of the MR's reply, in Hindi, Hinglish or English.",
+            "current_node_id": "route", "nodes": graph_nodes(company, names)}
+
+
+def agent_config(session, company: Company, kind: str = "simple") -> dict:
+    """kind "simple" is the live agent (one prompt); "graph" is the node-by-node experiment, with the
+    same voice, transcriber, tools and extractions."""
     names = company_names(session, company.id)
-    return {
+    graph = kind == "graph"
+    llm_agent = ({"agent_type": "graph_agent", "agent_flow_type": "streaming", "llm_config": graph_llm_config(company, names)}
+                 if graph else None)
+    config = {
         "agent_config": {
             "agent_name": f"Saathi - {company.name}"[:60],
             "agent_welcome_message": WELCOME,
@@ -191,18 +319,19 @@ def agent_config(session, company: Company) -> dict:
                 "task_type": "conversation",
                 "toolchain": {"execution": "parallel", "pipelines": [["transcriber", "llm", "synthesizer"]]},
                 "tools_config": {
-                    "llm_agent": {
+                    "llm_agent": llm_agent or {
                         "agent_type": "simple_llm_agent",
                         "agent_flow_type": "streaming",
                         "llm_config": {"provider": "openai", "family": "openai", "model": "gpt-5.4-mini",
-                                       "max_tokens": 500, "temperature": 1.0,  # Bolna requires 1 for reasoning models (gpt-5.x) "reasoning_effort": "none",
-                                       "verbosity": "low", "agent_flow_type": "streaming"},
+                                       "max_tokens": 500,
+                                       "temperature": 1.0,  # Bolna requires 1 for reasoning models (gpt-5.x)
+                                       "reasoning_effort": "none", "verbosity": "low", "agent_flow_type": "streaming"},
                     },
                     "synthesizer": VOICES.get(VOICE, VOICES["sarvam-ishita"]),
                     "transcriber": transcriber(company, names),
                     "input": {"provider": "vobiz", "format": "wav"},
                     "output": {"provider": "vobiz", "format": "wav"},
-                    "api_tools": api_tools(company),
+                    "api_tools": api_tools(company, graph),
                 },
                 "task_config": {
                     "call_terminate": MAX_CALL_SECONDS, "hangup_after_silence": 15, "hangup_after_LLMCall": True,
@@ -216,6 +345,18 @@ def agent_config(session, company: Company) -> dict:
         },
         "agent_prompts": {"task_1": {"system_prompt": build_prompt(company, names)}},
     }
+    if graph:
+        # The graph's end nodes decide when the call ends; the one-prompt hangup check would cut across them.
+        task_config = config["agent_config"]["tasks"][0]["task_config"]
+        # The closing line comes from check_visit (after a confirmed read-back), so the hangup judge only has
+        # to recognise Saathi's own words; the MR's words never end the call.
+        task_config["call_cancellation_prompt"] = GRAPH_HANGUP_PROMPT
+        del task_config["call_hangup_message"]
+        config["agent_config"]["tasks"][0]["tools_config"]["transcriber"]["endpointing"] = GRAPH_ENDPOINTING_MS
+        config["agent_config"]["agent_name"] = f"Saathi graph (test) - {company.name}"[:60]
+        config["agent_prompts"] = {"task_1": {"system_prompt": config["agent_config"]["tasks"][0]["tools_config"]
+                                              ["llm_agent"]["llm_config"]["agent_information"]}}
+    return config
 
 
 def dispositions(agent_id):

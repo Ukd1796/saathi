@@ -220,6 +220,14 @@ class Resolver:
                 m.best, m.confidence, m.score = near, "medium", MEDIUM
                 m.hint = f"heard a different strength; your list has {near}"
                 return m
+            same = self._strength_only(heard, kind)
+            if len(same) == 1:
+                m.best, m.confidence, m.score = same[0], "medium", MEDIUM
+                m.hint = f"only the strength was heard; {same[0]} is the only product with it"
+                return m
+            if same:
+                m.alternatives = same[:2]
+                return m
         if not scored:
             return m
         (top, best), runner = scored[0], (scored[1][0] if len(scored) > 1 else 0)
@@ -242,6 +250,13 @@ class Resolver:
         bare = key(re.sub(r"[\d.]+", "", to_latin(heard)))
         same = [n for n in self.names["product"] if _numbers(n) and key(re.sub(r"[\d.]+", "", n)) == bare]
         return same[0] if len(same) == 1 else None
+
+    def _strength_only(self, heard, kind):
+        """'seventy five' with the name lost: the products whose strength is that number."""
+        latin = to_latin(heard)
+        if kind != "product" or not _numbers(latin) or re.search(r"[a-z]", latin.lower()):
+            return []
+        return [n for n in self.names["product"] if _numbers(n) == _numbers(latin)]
 
     def resolve_all(self, items):
         """Resolve a call's names together, so they help each other: when the area is unclear but the

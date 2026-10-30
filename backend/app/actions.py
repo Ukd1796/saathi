@@ -57,7 +57,12 @@ def material_requests(session, visit: Visit):
     """The extraction lists which promises are material for the doctor; match them to the promises."""
     from rapidfuzz import fuzz
     from .extraction import parse_visit
-    wanted = (parse_visit(visit.call.extracted) or {}).get("materials", []) if visit.call else []
+    from .ingest import call_draft
+    draft = call_draft(session, visit.call) if visit.call else None
+    if draft is not None and draft.confirmed:  # graph agent: the promise as the rep confirmed it
+        wanted = draft.fields.get("materials", [])
+    else:
+        wanted = (parse_visit(visit.call.extracted) or {}).get("materials", []) if visit.call else []
     doctor = visit.doctor.name if visit.doctor else visit.doctor_raw
     for p in visit.promises:
         if not any(fuzz.token_set_ratio(p.text, m) >= 80 for m in wanted):

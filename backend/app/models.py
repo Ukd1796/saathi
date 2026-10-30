@@ -237,12 +237,31 @@ class ToolEvent(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     rep_id: Mapped[int | None] = mapped_column(ForeignKey("reps.id"), index=True)
-    tool: Mapped[str] = mapped_column(String(20))  # resolve_names | doctor_brief
+    tool: Mapped[str] = mapped_column(String(20))  # resolve_names | check_visit | doctor_brief
     kind: Mapped[str | None] = mapped_column(String(10))
     heard: Mapped[str | None] = mapped_column(Text)
     best: Mapped[str | None] = mapped_column(Text)
     confidence: Mapped[str | None] = mapped_column(String(10))  # high | medium | low
     created_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
+
+
+class VisitDraft(Base):
+    """The visit as check_visit last understood it during a call (graph agent), with names already
+    resolved. Once the rep says yes to the read-back built from it, it is what gets saved."""
+    __tablename__ = "visit_drafts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    rep_id: Mapped[int | None] = mapped_column(ForeignKey("reps.id"))
+    call_sid: Mapped[str] = mapped_column(String(80), index=True)  # telephony call id = Call.raw provider_call_id
+    fields: Mapped[dict] = mapped_column(JSON, default=dict)  # the parse_visit() shape
+    heard: Mapped[dict] = mapped_column(JSON, default=dict)  # what the agent last sent, to spot repeat calls
+    readback: Mapped[str | None] = mapped_column(Text)  # the read-back last said, while waiting for a yes
+    read_back: Mapped[dict | None] = mapped_column(JSON)  # the visit as last read back: what a yes confirms
+    mr_said: Mapped[str | None] = mapped_column(Text)  # the rep's words at the last tool call: a yes needs new ones
+    disputes: Mapped[dict] = mapped_column(JSON, default=dict)  # item -> times the rep said it was wrong
+    language: Mapped[str | None] = mapped_column(String(2))  # hi | en, from the rep's words (visit_check)
+    confirmed: Mapped[bool] = mapped_column(default=False)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 
 class ScheduledCall(Base):

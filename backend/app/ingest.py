@@ -14,12 +14,14 @@ from rapidfuzz import fuzz
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import config
 from .extraction import call_type, parse_visit, readback_confirmed
 from .matching import phone_key
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from .models import Call, Chemist, Doctor, Product, Promise, Rep, StockOut, ToolEvent, Visit, VisitItem, utcnow
+from .models import (Call, Chemist, Doctor, Product, Promise, Rep, StockOut, ToolEvent, Visit, VisitDraft, VisitItem,
+                     utcnow)
 from .names import Resolver, learn_alias
 from .actions import on_visit
 from .outbound import cut_off
@@ -81,8 +83,13 @@ def _by_name(session, model, company_id, name):
     return session.scalar(select(model).where(model.company_id == company_id, model.name == name))
 
 
-def build_visit(session: Session, call: Call) -> Visit | None:
-    fields = parse_visit(call.extracted)
+def build_visit(session: Session, call: Call, draft: VisitDraft | None = None) -> Visit | None:
+    """From the draft the rep confirmed on the call (names already checked), else from the extraction."""
+    extracted = parse_visit(call.extracted)
+    if draft is not None and draft.confirmed and draft.fields.get("doctor_name"):
+        fields = {**draft.fields, "promises_done": (extracted or {}).get("promises_done", [])}
+    else:
+        fields = extracted
     if fields is None:
         return None
     with session.no_autoflush:  # the half-built Visit must not flush while names are looked up
@@ -150,9 +157,18 @@ def process_payload(session: Session, company_id: int, payload: dict) -> Call:
     # Extraction can finish after the first `completed` POST, so keep trying until a visit exists.
     if call.status == "completed" and call.visit is None:
         call.processed_at = utcnow()
-        dropped = call.call_type != "briefing" and cut_off(call)
-        unconfirmed = call.call_type != "briefing" and readback_confirmed(call.extracted) is False
-        visit = None if call.call_type == "briefing" or dropped or unconfirmed else build_visit(session, call)
+        draft = call_draft(session, call)
+        # A graph-experiment call is saved only from a draft the rep confirmed: if its check never ran,
+        # the transcript is not trusted instead.
+        experiment = call.agent_id in config.EXPERIMENT_AGENT_IDS
+        if draft is not None or experiment:  # graph agent: the backend saw the read-back and the yes itself
+            confirmed = draft is not None and draft.confirmed
+            dropped = call.call_type != "briefing" and not confirmed and cut_off(call)
+            unconfirmed = call.call_type != "briefing" and not confirmed
+        else:
+            dropped = call.call_type != "briefing" and cut_off(call)
+            unconfirmed = call.call_type != "briefing" and readback_confirmed(call.extracted) is False
+        visit = None if call.call_type == "briefing" or dropped or unconfirmed else build_visit(session, call, draft)
         if call.call_type == "briefing":
             call.process_note = "briefing"
         elif dropped:
@@ -165,6 +181,9 @@ def process_payload(session: Session, company_id: int, payload: dict) -> Call:
             call.process_note = f"{len(visit.unmatched)} name(s) not matched"
         else:
             call.process_note = "ok"
+        if visit is not None and draft is not None and draft.fields.get("flagged"):
+            # items the rep disputed twice and Saathi kept in their words
+            call.process_note += "; please check: " + ", ".join(draft.fields["flagged"])
         if visit is not None:
             session.flush()  # the visit and its promises need ids before actions point at them
             on_visit(session, visit)
@@ -180,6 +199,25 @@ def _when(raw, key_):
         return datetime.fromisoformat(raw[key_].replace("Z", "+00:00")).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
     except (KeyError, AttributeError, TypeError, ValueError):
         return None
+
+
+def call_draft(session, call: Call) -> VisitDraft | None:
+    """The check_visit draft of this call: by the telephony call id Bolna gives the tool as call_sid,
+    else the rep's draft last touched during the call."""
+    raw = call.raw or {}
+    sid = (raw.get("telephony_data") or {}).get("provider_call_id")
+    if sid:
+        draft = session.scalar(select(VisitDraft).where(VisitDraft.company_id == call.company_id, VisitDraft.call_sid == sid))
+        if draft:
+            return draft
+    if not call.rep_id:
+        return None
+    start = _when(raw, "initiated_at") or call.created_at
+    end = _when(raw, "updated_at") or (start + timedelta(seconds=(call.duration_s or 0) + 120))
+    return session.scalar(select(VisitDraft).where(VisitDraft.company_id == call.company_id, VisitDraft.rep_id == call.rep_id,
+                                                   VisitDraft.updated_at >= start - timedelta(seconds=5),
+                                                   VisitDraft.updated_at <= end + timedelta(seconds=5))
+                          .order_by(VisitDraft.updated_at.desc()))
 
 
 def call_events(session, call: Call):
@@ -207,7 +245,7 @@ def learn_from_call(session, visit: Visit):
         "product": sorted({i.product.name for i in [*visit.items, *visit.stock_outs] if i.product}
                           | {p for p in visit.products_discussed or [] if p in names["product"]}),
     }
-    events = [e for e in call_events(session, visit.call) if e.tool == "resolve_names" and e.heard]
+    events = [e for e in call_events(session, visit.call) if e.tool in ("resolve_names", "check_visit") and e.heard]
     for kind, answers in final.items():
         for e in events:
             # Only a guess that turned out right is learnt ("Dr Rao?" -> "haan"). A word Saathi couldn't
