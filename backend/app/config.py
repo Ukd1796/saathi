@@ -26,7 +26,4 @@ PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:8000").rst
 TIMEZONE = os.environ.get("TIMEZONE", "Asia/Kolkata")
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0") == "1"
 VOICE = os.environ.get("VOICE", "sarvam-ishita")  # a key of agent_template.VOICES
-# Bolna agents running the graph experiment (comma-separated ids): their calls are saved only from a
-# visit the rep confirmed through check_visit, never from the transcript.
-EXPERIMENT_AGENT_IDS = {a.strip() for a in os.environ.get("EXPERIMENT_AGENT_IDS", "").split(",") if a.strip()}
 TRANSCRIBER = os.environ.get("TRANSCRIBER", "deepgram-nova3")  # a key in agent_template.transcriber()

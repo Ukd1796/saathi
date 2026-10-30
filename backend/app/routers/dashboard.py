@@ -65,7 +65,7 @@ def call_quality(session, call: Call):
     return {
         "duration_s": call.duration_s,
         "rep_turns": sum(1 for l in lines if l.startswith("user:")),
-        "reasks": sum(1 for e in events if e.tool == "resolve_names" and e.confidence == "low"),
+        "reasks": sum(1 for e in events if e.tool in ("resolve_names", "check_visit") and e.confidence == "low"),
         "names": names,
         "ended_by": {"agent_ended_call": "Saathi", "user_hung_up": "rep"}.get(raw.get("termination_reason"), raw.get("termination_reason")),
     }

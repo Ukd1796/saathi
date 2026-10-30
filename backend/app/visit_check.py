@@ -15,6 +15,8 @@ from .models import VisitDraft, utcnow
 from .names import Resolver, _say_number, spoken, spoken_numbers
 
 MISSING, NONE = "missing", "none"
+# What Saathi says when check_visit itself fails, so the rep isn't left in silence (the turn is logged).
+FALLBACK = "एक second, फिर से बताइए?"
 NONE_WORDS = {"none", "no", "nil"}  # the tool's own protocol values; the agent is told to send "none"
 # Asked in this order; stock-outs only matter once a chemist was visited.
 REQUIRED = ["doctor", "area", "products", "samples", "chemist", "stock_outs", "promise", "next_visit"]
@@ -175,7 +177,7 @@ def check_visit(session, company, rep, fields: dict) -> dict:
                   or draft.readback and not mr_said
                   or mr_said and mr_said == draft.mr_said and recent
                   or not mr_said and not yes and draft.heard == heard and recent):
-        return {"status": "repeat", "say": "", "matches": []}
+        return {"status": "repeat", "say": "", "matches": [], "asked": None}
     result = _next_line(session, company, rep, fields, lang)
     if call_sid and draft is None:
         draft = VisitDraft(company_id=company.id, rep_id=rep.id if rep else None, call_sid=call_sid, disputes={})
@@ -216,15 +218,15 @@ def _after_read_back(draft, result, fields, yes, lang, company) -> dict:
         draft.disputes = {**(draft.disputes or {}), g: (draft.disputes or {}).get(g, 0) + 1}
         if draft.disputes[g] >= DISPUTES_BEFORE_FLAG:  # same item garbled again: keep it, the manager checks it
             draft.read_back = {**draft.read_back, "flagged": sorted(flagged | {g})}
-            return {**result, "status": "flagged", "say": L["flag"].format(item=L["items"][g])}
-        return {**result, "status": "asking", "say": L["again"][g]}
+            return {**result, "status": "flagged", "say": L["flag"].format(item=L["items"][g]), "asked": f"flag:{g}"}
+        return {**result, "status": "asking", "say": L["again"][g], "asked": f"again:{g}"}
     if interrupted:
-        return {**result, "status": "asking", "say": L["whats_wrong"]}
+        return {**result, "status": "asking", "say": L["whats_wrong"], "asked": "whats_wrong"}
     if not draft.readback:  # the reply was to a question, not to a read-back: a yes here records nothing
         parts = [result["parts"][g] for g in GROUPS if g in about and g in result["parts"]]
         return {**result, "say": " ".join([*parts, L["ask"]]) if parts else result["say"]}
     if not yes:
-        return {**result, "status": "asking", "say": L["ask"]}
+        return {**result, "status": "asking", "say": L["ask"], "asked": "confirm_readback"}
     follow = L["followup"] if company.auto_followup and draft.read_back.get("next_visit") else ""
     return {**result, "status": "recorded", "say": L["recorded"] + follow + L["thanks"]}
 
@@ -278,8 +280,8 @@ def _next_line(session, company, rep, fields, lang) -> dict:
         "materials": [promise] if promise and str(fields.get("promise_material", "")).lower().startswith("y") else [],
     }
 
-    def reply(status, say, parts=None):
-        return {"status": status, "say": say, "visit": visit, "parts": parts or {},
+    def reply(status, say, parts=None, asked=None):
+        return {"status": status, "say": say, "visit": visit, "parts": parts or {}, "asked": asked,
                 "matches": [m.as_dict() for m in matches.values()]}
 
     # 1. a name that matched nothing on the lists
@@ -288,26 +290,27 @@ def _next_line(session, company, rep, fields, lang) -> dict:
             options = [spoken(o) for o in m.alternatives]
             k = L["kinds"][kind]
             if options:
-                return reply("unclear", L["pick"].format(kind=k, options=L["or"].join(options)))
-            return reply("unclear", L["repeat"].format(kind=k))
+                return reply("unclear", L["pick"].format(kind=k, options=L["or"].join(options)), asked=f"pick:{kind}")
+            return reply("unclear", L["repeat"].format(kind=k), asked=f"repeat:{kind}")
     # 2. a guess the matcher itself says must be confirmed (e.g. only the strength was heard)
     for m in matches.values():
         if m.confidence == "medium" and m.hint:
-            return reply("unclear", L["confirm"].format(name=spoken(m.best)))
+            return reply("unclear", L["confirm"].format(name=spoken(m.best)), asked=f"confirm:{m.kind}")
     # 3. nothing about the visit yet: invite the whole of it, not one item; else the first missing item
     if all(values[k] == MISSING for k in REQUIRED):
-        return reply("missing", L["invite"])
+        return reply("missing", L["invite"], asked="visit")
     for key in REQUIRED:
         if key == "stock_outs" and values["chemist"] in (MISSING, NONE):
             continue
         if values[key] == MISSING:
             return reply("missing", L[key].format(doctor=name("doctor", values["doctor"]) if values["doctor"] != MISSING else "",
-                                                 chemist=name("chemist", values["chemist"]) if values["chemist"] not in (MISSING, NONE) else ""))
+                                                 chemist=name("chemist", values["chemist"]) if values["chemist"] not in (MISSING, NONE) else ""),
+                             asked=key)
     # 4. a sample or order without a number
     for pairs, line in ((samples, "qty_sample"), (orders, "qty_order")):
         for product, n in pairs:
             if n is None:
-                return reply("missing", L[line].format(product=name("product", product)))
+                return reply("missing", L[line].format(product=name("product", product)), asked=line)
 
     # 5. everything is there: the read-back, one sentence per part (see GROUPS), so a later
     # correction can be read back on its own

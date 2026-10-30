@@ -4,7 +4,6 @@ import copy
 
 from sqlalchemy import select
 
-from app import config
 from app.extraction import parse_visit
 from app.matching import best_match, match_person
 from app.models import Rep, Visit, VisitDraft
@@ -35,13 +34,15 @@ def test_status_updates_and_repeats_are_idempotent(client, company):
         assert s.query(Visit).count() == 1
 
 
-def test_late_extraction_still_creates_visit(client, company):
-    p = copy.deepcopy(PAYLOAD)
-    p["id"] = "late"
-    first = copy.deepcopy(p)
-    first["extracted_data"] = None
-    assert webhook(client, company, first).json()["note"].startswith("no visit")
-    assert webhook(client, company, p).json()["note"] == "ok"
+def test_visit_does_not_wait_for_the_extraction(client, company):
+    """The confirmed draft is there from the call itself, so a `completed` without extracted data is enough."""
+    from conftest import confirmed_draft
+    p = confirmed_draft(client, company, {**copy.deepcopy(PAYLOAD), "id": "late"})
+    first = {**copy.deepcopy(p), "extracted_data": None}
+    assert webhook(client, company, first, confirmed=False).json()["note"] == "ok"
+    webhook(client, company, p, confirmed=False)
+    with client.Session() as s:
+        assert len(s.scalars(select(Visit)).all()) == 1
 
 
 def test_wrong_secret_is_rejected(client, company):
@@ -121,11 +122,8 @@ def test_graph_call_without_a_confirmed_read_back_is_not_saved(client, company):
     assert graph_call(client, company, confirmed=False).json()["note"] == "not saved: the rep didn't confirm the read-back"
 
 
-def test_experiment_call_without_a_check_is_not_saved_from_the_transcript(client, company, monkeypatch):
-    """A graph-agent call whose check never ran: the extraction says confirmed, but nothing is saved."""
-    monkeypatch.setattr(config, "EXPERIMENT_AGENT_IDS", {"graph-test-agent"})
-    payload = copy.deepcopy(PAYLOAD)
-    payload["agent_id"] = "graph-test-agent"
-    assert webhook(client, company, payload).json()["note"] == "not saved: the rep didn't confirm the read-back"
+def test_call_without_a_check_is_not_saved_from_the_transcript(client, company):
+    """check_visit never ran: the extraction says confirmed, but nothing is saved."""
+    assert webhook(client, company, PAYLOAD, confirmed=False).json()["note"] == "not saved: the rep didn't confirm the read-back"
     with client.Session() as s:
         assert s.scalars(select(Visit)).first() is None

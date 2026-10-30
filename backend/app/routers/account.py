@@ -239,7 +239,7 @@ def agent_status(user: User = Depends(admin_user), session: Session = Depends(ge
     return {"agent_id": c.bolna_agent_id, "synced_at": c.agent_synced_at.isoformat() if c.agent_synced_at else None,
             "phone_number": c.phone_number, "sweep_time": c.sweep_time, "public_base_url": PUBLIC_BASE_URL,
             "localhost_warning": "localhost" in PUBLIC_BASE_URL or "127.0.0.1" in PUBLIC_BASE_URL,
-            "prompt": agent_template.build_prompt(c, names), "keywords": agent_template.keywords(names),
+            "nodes": agent_template.graph_summary(c, names), "keywords": agent_template.keywords(names),
             "welcome": agent_template.WELCOME,
             "extractions": [n for n, _ in agent_template.EXTRACTIONS]}
 

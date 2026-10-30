@@ -1,20 +1,48 @@
 "use client";
 
 import Link from "next/link";
-import { Bot, Clock, Code2, Phone, PhoneForwarded, RefreshCw, TriangleAlert } from "lucide-react";
+import { ArrowRight, Bot, Clock, Code2, Phone, PhoneForwarded, RefreshCw, TriangleAlert, Wrench } from "lucide-react";
 import { useState } from "react";
-import { type Agent, api, type ApiError, useApi, when } from "@/lib/api";
+import { type Agent, api, type ApiError, type GraphNode, useApi, when } from "@/lib/api";
 import { useMe } from "@/components/shell";
 import { useToast } from "@/components/toast";
 import { Badge, Button, Card, Input, PageHeader, Skeleton, Tabs } from "@/components/ui";
 import { NumberPicker } from "./number-picker";
+
+const NODE_TONE = { router: "default", static: "coral", llm: "brand" } as const;
+
+/** The graph agent's steps: what each one does and where the call goes next. */
+function CallFlow({ nodes }: { nodes: GraphNode[] }) {
+  return (
+    <ol className="max-h-[32rem] space-y-2 overflow-auto pr-1">
+      {nodes.map((n) => (
+        <li key={n.id} id={`node-${n.id}`}>
+          <details className="rounded-xl border border-line bg-card px-3 py-2">
+            <summary className="flex cursor-pointer flex-wrap items-center gap-2 text-sm">
+              <code className="font-semibold text-ink">{n.id}</code>
+              <Badge tone={NODE_TONE[n.type] ?? "default"}>{n.type === "static" ? "ends the call" : n.type === "router" ? "start" : "step"}</Badge>
+              {n.tool && <Badge tone="good"><Wrench size={11} />{n.tool}</Badge>}
+              <span className="ml-auto flex flex-wrap gap-1 text-xs text-muted">{n.edges.map((e) => <span key={e.to + e.when} className="inline-flex items-center gap-0.5"><ArrowRight size={11} />{e.to}</span>)}</span>
+            </summary>
+            {n.edges.length > 0 && (
+              <ul className="mt-2 space-y-1 text-xs">
+                {n.edges.map((e) => <li key={e.to + e.when}><code className="text-brand">{e.to}</code> <span className="text-muted">when {e.when}</span></li>)}
+              </ul>
+            )}
+            {n.prompt && <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-soft p-3 font-mono text-[11px] leading-relaxed">{n.prompt}</pre>}
+          </details>
+        </li>
+      ))}
+    </ol>
+  );
+}
 
 export default function SettingsPage() {
   const toast = useToast();
   const { me, reload: reloadMe } = useMe();
   const agent = useApi<Agent>("/agent");
   const [sweep, setSweep] = useState(me.company.sweep_time ?? "19:00");
-  const [view, setView] = useState<"prompt" | "keywords" | "fields">("prompt");
+  const [view, setView] = useState<"flow" | "keywords" | "fields">("flow");
   const [busy, setBusy] = useState(false);
 
   async function run(fn: () => Promise<unknown>, ok: string) {
@@ -54,7 +82,7 @@ export default function SettingsPage() {
                 {busy ? "Syncing…" : "Re-sync agent"}
               </Button>
             </div>
-            <p className="text-xs text-muted">Re-sync after changing master data or the backend address, so the prompt, keywords, tools and webhook stay current.</p>
+            <p className="text-xs text-muted">Re-sync after changing master data or the backend address, so the call flow, keywords, tools and webhook stay current.</p>
           </div>
         )}
       </Card>
@@ -89,10 +117,10 @@ export default function SettingsPage() {
 
       {a && (
         <Card title="What the agent knows" icon={Code2} action={<Tabs value={view} onChange={setView} options={[
-          { value: "prompt", label: "Prompt" }, { value: "keywords", label: "Keywords" }, { value: "fields", label: "Fields", count: a.extractions.length },
+          { value: "flow", label: "Call flow", count: a.nodes.length }, { value: "keywords", label: "Keywords" }, { value: "fields", label: "Fields", count: a.extractions.length },
         ]} />}>
           <div className="mb-3 rounded-xl bg-brand-soft px-3 py-2 text-sm"><span className="font-semibold text-brand">Greeting: </span>{a.welcome}</div>
-          {view === "prompt" && <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap rounded-xl bg-soft p-4 font-mono text-xs leading-relaxed">{a.prompt}</pre>}
+          {view === "flow" && <CallFlow nodes={a.nodes} />}
           {view === "keywords" && <div className="flex flex-wrap gap-1.5">{a.keywords.split(",").map((k) => k.trim()).filter(Boolean).map((k) => <Badge key={k} tone="brand">{k}</Badge>)}</div>}
           {view === "fields" && <div className="flex flex-wrap gap-1.5">{a.extractions.map((x) => <Badge key={x}>{x}</Badge>)}</div>}
         </Card>

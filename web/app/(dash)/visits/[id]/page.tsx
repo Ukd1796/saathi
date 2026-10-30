@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { useApi, when, type Visit } from "@/lib/api";
 import { DoctorCell, Items } from "@/components/visit-bits";
 import { Avatar, Badge, Card, ErrorNote, PageHeader, Skeleton } from "@/components/ui";
+import { useMe } from "@/components/shell";
 import type { LucideIcon } from "lucide-react";
 
 function Row({ icon: Icon, label, children }: { icon: LucideIcon; label: string; children: ReactNode }) {
@@ -69,6 +70,7 @@ function CallQuality({ q }: { q: NonNullable<Visit["quality"]> }) {
 
 export default function VisitPage() {
   const { id } = useParams<{ id: string }>();
+  const { me } = useMe();
   const { data: v, error } = useApi<Visit>(`/visits/${id}`);
   if (error) return <ErrorNote error={error} />;
   if (!v) return <div className="space-y-4"><Skeleton className="h-16 w-80" /><Skeleton className="h-96" /></div>;
@@ -81,6 +83,7 @@ export default function VisitPage() {
         title={<span className="flex items-center gap-3"><Avatar name={v.doctor ?? v.doctor_heard ?? "?"} size="lg" />{v.doctor ?? `? ${v.doctor_heard}`}</span>}
         sub={`${when(v.visited_at)} · reported by ${v.rep ?? "unknown rep"}${v.area ? ` · ${v.area}` : ""}`}
         action={<>
+          {v.call && me.role === "admin" && <Link href={`/call-health/${v.call_id}`} className="inline-flex h-9 items-center rounded-xl border border-line bg-card px-3.5 text-sm font-semibold text-ink hover:text-brand">Call trace</Link>}
           {v.doctor_id && <Link href={`/doctors/${v.doctor_id}`} className="inline-flex h-9 items-center rounded-xl border border-line bg-card px-3.5 text-sm font-semibold text-ink hover:text-brand">Doctor history</Link>}
         </>} />
 

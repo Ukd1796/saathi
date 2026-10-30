@@ -14,13 +14,13 @@ from rapidfuzz import fuzz
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import config
-from .extraction import call_type, parse_visit, readback_confirmed
+from . import call_health
+from .extraction import call_type, parse_visit
 from .matching import phone_key
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from .models import (Call, Chemist, Doctor, Product, Promise, Rep, StockOut, ToolEvent, Visit, VisitDraft, VisitItem,
+from .models import (AgentTurn, Call, Chemist, Doctor, Product, Promise, Rep, StockOut, ToolEvent, Visit, VisitDraft, VisitItem,
                      utcnow)
 from .names import Resolver, learn_alias
 from .actions import on_visit
@@ -158,16 +158,11 @@ def process_payload(session: Session, company_id: int, payload: dict) -> Call:
     if call.status == "completed" and call.visit is None:
         call.processed_at = utcnow()
         draft = call_draft(session, call)
-        # A graph-experiment call is saved only from a draft the rep confirmed: if its check never ran,
-        # the transcript is not trusted instead.
-        experiment = call.agent_id in config.EXPERIMENT_AGENT_IDS
-        if draft is not None or experiment:  # graph agent: the backend saw the read-back and the yes itself
-            confirmed = draft is not None and draft.confirmed
-            dropped = call.call_type != "briefing" and not confirmed and cut_off(call)
-            unconfirmed = call.call_type != "briefing" and not confirmed
-        else:
-            dropped = call.call_type != "briefing" and cut_off(call)
-            unconfirmed = call.call_type != "briefing" and readback_confirmed(call.extracted) is False
+        # A debrief is saved only from the draft the rep said yes to: check_visit built the read-back and
+        # heard the yes itself. The transcript is never trusted for that.
+        confirmed = draft is not None and draft.confirmed
+        dropped = call.call_type != "briefing" and not confirmed and cut_off(call)
+        unconfirmed = call.call_type != "briefing" and not confirmed
         visit = None if call.call_type == "briefing" or dropped or unconfirmed else build_visit(session, call, draft)
         if call.call_type == "briefing":
             call.process_note = "briefing"
@@ -190,6 +185,8 @@ def process_payload(session: Session, company_id: int, payload: dict) -> Call:
             learn_from_call(session, visit)
         if call.rep is None:
             call.process_note += f"; unknown rep phone {call.rep_phone}"
+    if call_health.finished(call):
+        call_health.record(call, call_draft(session, call), call_turns(session, call))
     session.commit()
     return call
 
@@ -201,35 +198,53 @@ def _when(raw, key_):
         return None
 
 
-def call_draft(session, call: Call) -> VisitDraft | None:
-    """The check_visit draft of this call: by the telephony call id Bolna gives the tool as call_sid,
-    else the rep's draft last touched during the call."""
+def call_window(call: Call):
+    """When the call ran, for linking tool calls to it by the rep when no call id came with them."""
     raw = call.raw or {}
-    sid = (raw.get("telephony_data") or {}).get("provider_call_id")
+    start = _when(raw, "initiated_at") or call.created_at
+    end = _when(raw, "updated_at") or (start + timedelta(seconds=(call.duration_s or 0) + 120))
+    return start - timedelta(seconds=5), end + timedelta(seconds=5)
+
+
+def call_sid(call: Call) -> str | None:
+    """The telephony call id, which Bolna also hands the tools as call_sid."""
+    return ((call.raw or {}).get("telephony_data") or {}).get("provider_call_id")
+
+
+def call_draft(session, call: Call) -> VisitDraft | None:
+    """The check_visit draft of this call: by call_sid, else the rep's draft last touched during the call."""
+    sid = call_sid(call)
     if sid:
         draft = session.scalar(select(VisitDraft).where(VisitDraft.company_id == call.company_id, VisitDraft.call_sid == sid))
         if draft:
             return draft
     if not call.rep_id:
         return None
-    start = _when(raw, "initiated_at") or call.created_at
-    end = _when(raw, "updated_at") or (start + timedelta(seconds=(call.duration_s or 0) + 120))
+    start, end = call_window(call)
     return session.scalar(select(VisitDraft).where(VisitDraft.company_id == call.company_id, VisitDraft.rep_id == call.rep_id,
-                                                   VisitDraft.updated_at >= start - timedelta(seconds=5),
-                                                   VisitDraft.updated_at <= end + timedelta(seconds=5))
+                                                   VisitDraft.updated_at >= start, VisitDraft.updated_at <= end)
                           .order_by(VisitDraft.updated_at.desc()))
+
+
+def call_turns(session, call: Call) -> list[AgentTurn]:
+    """The graph agent's tool calls during this call, in order: by call_sid, else by the rep and time."""
+    sid = call_sid(call)
+    q = select(AgentTurn).where(AgentTurn.company_id == call.company_id)
+    turns = session.scalars(q.where(AgentTurn.call_sid == sid).order_by(AgentTurn.id)).all() if sid else []
+    if turns or not call.rep_id:
+        return list(turns)
+    start, end = call_window(call)
+    return list(session.scalars(q.where(AgentTurn.rep_id == call.rep_id, AgentTurn.created_at >= start,
+                                        AgentTurn.created_at <= end).order_by(AgentTurn.id)))
 
 
 def call_events(session, call: Call):
     """The names Saathi checked during this call (tool calls carry the rep's number, not the call id)."""
     if not call.rep_id:
         return []
-    raw = call.raw or {}
-    start = _when(raw, "initiated_at") or call.created_at
-    end = _when(raw, "updated_at") or (start + timedelta(seconds=(call.duration_s or 0) + 120))
+    start, end = call_window(call)
     return session.scalars(select(ToolEvent).where(ToolEvent.company_id == call.company_id, ToolEvent.rep_id == call.rep_id,
-                                                   ToolEvent.created_at >= start - timedelta(seconds=5),
-                                                   ToolEvent.created_at <= end + timedelta(seconds=5))
+                                                   ToolEvent.created_at >= start, ToolEvent.created_at <= end)
                            .order_by(ToolEvent.created_at)).all()
 
 

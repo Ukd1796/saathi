@@ -133,6 +133,12 @@ class Call(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
     processed_at: Mapped[datetime | None]
     process_note: Mapped[str | None] = mapped_column(Text)
+    # How the call went, step by step (call_health.diagnose): outcome is recorded | briefing | stopped |
+    # wrong_number | failed; a failed call says at which step of the graph and why.
+    outcome: Mapped[str | None] = mapped_column(String(20))
+    failure_stage: Mapped[str | None] = mapped_column(String(20))
+    failure_reason: Mapped[str | None] = mapped_column(Text)
+    warnings: Mapped[list | None] = mapped_column(JSON)
 
     rep: Mapped[Rep | None] = relationship()
     visit: Mapped["Visit | None"] = relationship(back_populates="call")
@@ -231,7 +237,7 @@ class Action(Base):
 
 
 class ToolEvent(Base):
-    """One name Saathi checked during a call (resolve_names / get_doctor_brief). Bolna doesn't report
+    """One name Saathi checked during a call (check_visit / get_doctor_brief). Bolna doesn't report
     tool calls in the execution, so we keep our own record to show call quality afterwards."""
     __tablename__ = "tool_events"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -262,6 +268,25 @@ class VisitDraft(Base):
     language: Mapped[str | None] = mapped_column(String(2))  # hi | en, from the rep's words (visit_check)
     confirmed: Mapped[bool] = mapped_column(default=False)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class AgentTurn(Base):
+    """One tool call the graph agent made during a call, with what the backend answered: the trace
+    Call health shows to find the step where a call went wrong."""
+    __tablename__ = "agent_turns"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    rep_id: Mapped[int | None] = mapped_column(ForeignKey("reps.id"))
+    call_sid: Mapped[str | None] = mapped_column(String(80), index=True)  # = Call.raw provider_call_id
+    tool: Mapped[str] = mapped_column(String(20))  # check_visit | doctor_brief
+    status: Mapped[str] = mapped_column(String(20))  # check_visit's status, or found | unclear | not_found | error
+    asked: Mapped[str | None] = mapped_column(String(30))  # the item a question was about (visit_check)
+    say: Mapped[str | None] = mapped_column(Text)
+    mr_said: Mapped[str | None] = mapped_column(Text)
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    ms: Mapped[int | None]
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
 
 
 class ScheduledCall(Base):

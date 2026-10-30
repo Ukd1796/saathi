@@ -150,7 +150,25 @@ export function mask(phone: string | null | undefined) {
   return phone.length > 6 ? `${phone.slice(0, 3)} ••••• ${phone.slice(-4)}` : phone;
 }
 
+export type GraphNode = { id: string; type: "router" | "static" | "llm"; description: string | null; prompt: string | null;
+  tool: string | null; edges: { to: string; when: string }[] };
+
 export type Agent = {
   agent_id: string | null; synced_at: string | null; phone_number: string | null; sweep_time: string | null;
-  public_base_url: string; localhost_warning: boolean; prompt: string; keywords: string; welcome: string; extractions: string[];
+  public_base_url: string; localhost_warning: boolean; nodes: GraphNode[]; keywords: string; welcome: string; extractions: string[];
+};
+
+export type HealthCall = {
+  id: string; at: string; rep: string | null; rep_phone: string | null; direction: string | null; call_type: string | null;
+  duration_s: number | null; status: string; outcome: string; failure_stage: string | null; failure_reason: string | null;
+  warnings: string[]; visit_id: number | null;
+};
+export type CallHealth = { days: number; outcomes: Record<string, number>; stages: Record<string, number>; calls: HealthCall[] };
+export type AgentTurn = { at: string; tool: string; status: string; asked: string | null; say: string | null;
+  mr_said: string | null; ms: number | null; error: string | null; params: Record<string, string> };
+export type CallTrace = {
+  call: HealthCall & { transcript: string | null; process_note: string | null; ended_by: string | null; recording_url: string | null };
+  turns: AgentTurn[];
+  draft: { heard: Record<string, string>; read_back: Record<string, unknown> | null; disputes: Record<string, number>;
+    confirmed: boolean; language: string | null } | null;
 };

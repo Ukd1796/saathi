@@ -1,12 +1,11 @@
-"""The graph-agent experiment: the config must be a valid graph, and the live one-prompt agent unchanged."""
+"""The agent is a graph agent: the config must be a valid graph, with each tool scoped to its node."""
 
 from app import agent_template
 
 
 def configs(client, company):
     with client.Session() as s:
-        return agent_template.agent_config(s, company), agent_template.agent_config(s, company, kind="graph"), \
-            agent_template.company_names(s, company.id)
+        return agent_template.agent_config(s, company), agent_template.company_names(s, company.id)
 
 
 def task(config):
@@ -14,7 +13,7 @@ def task(config):
 
 
 def test_graph_is_well_formed(client, company):
-    _, graph, _ = configs(client, company)
+    graph, _ = configs(client, company)
     llm = task(graph)["tools_config"]["llm_agent"]
     assert llm["agent_type"] == "graph_agent"
     nodes = {n["id"]: n for n in llm["llm_config"]["nodes"]}
@@ -32,7 +31,7 @@ def test_graph_is_well_formed(client, company):
 
 
 def test_graph_tools_are_scoped_to_existing_nodes(client, company):
-    _, graph, _ = configs(client, company)
+    graph, _ = configs(client, company)
     nodes = {n["id"]: n for n in task(graph)["tools_config"]["llm_agent"]["llm_config"]["nodes"]}
     tools = task(graph)["tools_config"]["api_tools"]
     for name, params in tools["tools_params"].items():
@@ -43,23 +42,34 @@ def test_graph_tools_are_scoped_to_existing_nodes(client, company):
 
 
 def test_graph_hands_the_end_of_the_call_to_its_end_nodes(client, company):
-    simple, graph, _ = configs(client, company)
-    assert "call_cancellation_prompt" in task(simple)["task_config"]
-    # the graph's hangup check only recognises Saathi's own closing line, never the rep's words
-    assert task(graph)["task_config"]["call_cancellation_prompt"] != task(simple)["task_config"]["call_cancellation_prompt"]
+    graph, _ = configs(client, company)
+    # the hangup check only recognises Saathi's own closing line, never the rep's words
     assert "record हो गया" in task(graph)["task_config"]["call_cancellation_prompt"]
-    # everything else the comparison holds fixed is identical (the graph waits longer for a pause)
-    for key in ("synthesizer", "input", "output"):
-        assert task(graph)["tools_config"][key] == task(simple)["tools_config"][key]
-    g, s = task(graph)["tools_config"]["transcriber"], task(simple)["tools_config"]["transcriber"]
-    assert g["endpointing"] > s["endpointing"] and {**g, "endpointing": 0} == {**s, "endpointing": 0}
-    assert task(simple)["tools_config"]["llm_agent"]["agent_type"] == "simple_llm_agent"
-    assert "scope" not in task(simple)["tools_config"]["api_tools"]["tools_params"]["resolve_names"]
+    assert "call_hangup_message" not in task(graph)["task_config"]
+    assert task(graph)["tools_config"]["transcriber"]["endpointing"] == agent_template.ENDPOINTING_MS
+
+
+def test_every_tool_call_carries_the_call_id(client, company):
+    graph, _ = configs(client, company)
+    for name, params in task(graph)["tools_config"]["api_tools"]["tools_params"].items():
+        assert params["param"]["call_sid"] == "%(call_sid)s", name
+
+
+def test_onboarding_creates_a_graph_agent(client, company, monkeypatch):
+    from app import bolna
+    sent = []
+    monkeypatch.setattr(bolna, "create_agent", lambda config: sent.append(config) or {"agent_id": "a-1"})
+    monkeypatch.setattr(bolna, "create_dispositions", lambda payload: {})
+    assert client.post("/api/agent/create").json() == {"agent_id": "a-1"}
+    assert task(sent[0])["tools_config"]["llm_agent"]["agent_type"] == "graph_agent"
+    status = client.get("/api/agent").json()
+    assert {n["id"] for n in status["nodes"]} >= {"route", "opening", "listen", "visit", "briefing"}
+    assert next(n for n in status["nodes"] if n["id"] == "visit")["tool"] == "check_visit"
 
 
 def test_graph_prompts_name_no_company_records(client, company):
     """Examples are placeholders; the company's doctors, products and chemists come from the call."""
-    _, graph, names = configs(client, company)
+    graph, names = configs(client, company)
     llm = task(graph)["tools_config"]["llm_agent"]["llm_config"]
     texts = [llm["agent_information"], llm["routing_instructions"]]
     for n in llm["nodes"]:
@@ -73,13 +83,13 @@ def test_graph_prompts_name_no_company_records(client, company):
 
 def test_the_check_always_runs_after_the_reps_first_message(client, company):
     """Listening hands over by rule, not by the router's judgement (which once kept the call in listen)."""
-    _, graph, _ = configs(client, company)
+    graph, _ = configs(client, company)
     nodes = {n["id"]: n for n in task(graph)["tools_config"]["llm_agent"]["llm_config"]["nodes"]}
     (edge,) = nodes["listen"]["edges"]
     assert edge["to_node_id"] == "visit" and edge["condition_type"] == "unconditional"
 
 
 def test_graph_model_is_one_setting_for_conversation_and_routing(client, company):
-    _, graph, _ = configs(client, company)
+    graph, _ = configs(client, company)
     llm = task(graph)["tools_config"]["llm_agent"]["llm_config"]
-    assert llm["model"] == llm["routing_model"] == agent_template.GRAPH_MODEL
+    assert llm["model"] == llm["routing_model"] == agent_template.MODEL

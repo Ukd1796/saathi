@@ -4,6 +4,7 @@ call starts, 3 s budget) and the two custom functions the agent uses mid-call.""
 import hmac
 import json
 import logging
+import time
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import select
@@ -12,10 +13,10 @@ from sqlalchemy.orm import Session
 from ..briefing import doctor_brief
 from ..db import get_session
 from ..ingest import find_rep, process_payload
-from ..models import Company, Doctor, Promise, Rep, ToolEvent
+from ..models import AgentTurn, Company, Doctor, Promise, Rep, ToolEvent
 from ..names import Resolver, parse_items, spoken
 from ..outbound import greeting, maybe_callback, maybe_resume, maybe_retry, rep_context
-from ..visit_check import check_visit
+from ..visit_check import FALLBACK, check_visit
 from ..agent_template import VISIT_FIELDS
 
 log = logging.getLogger("saathi.bolna")
@@ -125,17 +126,35 @@ async def resolve_names(request: Request, company: str = "", authorization: str 
     return {"results": results, "message": "\n".join(lines)}
 
 
+def _turn(session, comp, rep, tool, params, started, **fields):
+    """The trace Call health reads: what the agent sent and what it was told, per tool call."""
+    session.add(AgentTurn(company_id=comp.id, rep_id=rep.id if rep else None, tool=tool,
+                          call_sid=str(params.get("call_sid") or "").strip() or None, params=params,
+                          mr_said=params.get("mr_said"), ms=int((time.monotonic() - started) * 1000), **fields))
+
+
 @router.api_route("/tools/check_visit", methods=["GET", "POST"])
 async def check_visit_tool(request: Request, company: str = "", authorization: str = Header(default=""),
                            session: Session = Depends(get_session)):
     """The graph agent's single tool for a debrief: it says what Saathi says next (see visit_check)."""
+    started = time.monotonic()
     comp = _company(session, company)
     _check(comp.tool_token, authorization)
     params = await _params(request)
     rep = _rep_for(session, comp, params)
-    result = check_visit(session, comp, rep, params)
+    try:
+        result = check_visit(session, comp, rep, params)
+    except Exception as exc:  # a crash here would leave the rep in silence: keep the call going, log the turn
+        log.exception("check_visit failed for company %s: %s", comp.id, params)
+        session.rollback()
+        _turn(session, comp, rep, "check_visit", params, started, status="error", say=FALLBACK,
+              error=f"{type(exc).__name__}: {exc}"[:2000])
+        session.commit()
+        return {"status": "error", "message": f'Say exactly this and nothing else: "{FALLBACK}"'}
     session.add_all(ToolEvent(company_id=comp.id, rep_id=rep.id if rep else None, tool="check_visit", kind=m["kind"],
                               heard=m["heard"], best=m["best"], confidence=m["confidence"]) for m in result["matches"])
+    _turn(session, comp, rep, "check_visit", params, started, status=result["status"], asked=result.get("asked"),
+          say=result["say"] or None)
     session.commit()
     log.info("check_visit %s -> %s: %s", {k: params.get(k) for k in VISIT_FIELDS}, result["status"], result["say"])
     if result["status"] == "repeat":
@@ -146,6 +165,7 @@ async def check_visit_tool(request: Request, company: str = "", authorization: s
 @router.api_route("/tools/doctor_brief", methods=["GET", "POST"])
 async def doctor_brief_tool(request: Request, company: str = "", authorization: str = Header(default=""),
                             session: Session = Depends(get_session)):
+    started = time.monotonic()
     comp = _company(session, company)
     _check(comp.tool_token, authorization)
     params = await _params(request)
@@ -153,12 +173,17 @@ async def doctor_brief_tool(request: Request, company: str = "", authorization: 
     m = Resolver(session, comp.id, rep).resolve(params.get("doctor", ""), "doctor")
     session.add(ToolEvent(company_id=comp.id, rep_id=rep.id if rep else None, tool="doctor_brief", kind="doctor",
                           heard=params.get("doctor"), best=m.best, confidence=m.confidence))
-    session.commit()
+
+    def answer(status, message, **extra):
+        _turn(session, comp, rep, "doctor_brief", params, started, status=status, asked="doctor", say=message)
+        session.commit()
+        return {**extra, "message": message}
+
     if m.confidence == "low" or not m.best:
-        return {"message": f'No doctor matches "{params.get("doctor")}". Ask the MR for the name again.'}
+        return answer("not_found", f'No doctor matches "{params.get("doctor")}". Ask the MR for the name again.')
     if m.confidence == "medium":
         options = ", ".join([m.best, *m.alternatives])
-        return {"message": f"Not sure which doctor. Ask the MR: {options}?"}
+        return answer("unclear", f"Not sure which doctor. Ask the MR: {options}?")
     doctor = session.scalar(select(Doctor).where(Doctor.company_id == comp.id, Doctor.name == m.best))
     brief = doctor_brief(session, doctor)
-    return {"doctor": brief["doctor"], "message": f'{brief["doctor"]} ({brief["area"] or "area unknown"}): {brief["spoken"]}'}
+    return answer("found", f'{brief["doctor"]} ({brief["area"] or "area unknown"}): {brief["spoken"]}', doctor=brief["doctor"])

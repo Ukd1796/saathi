@@ -7,7 +7,7 @@ from fastapi import FastAPI
 
 from .db import SessionLocal, init_db
 from .outbound import run_scheduled, run_sweeps
-from .routers import account, bolna_hooks, dashboard
+from .routers import account, bolna_hooks, dashboard, health
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 log = logging.getLogger("saathi")
@@ -39,6 +39,7 @@ app = FastAPI(title="Saathi platform", lifespan=lifespan)
 app.include_router(account.router)
 app.include_router(dashboard.router)
 app.include_router(bolna_hooks.router)
+app.include_router(health.router)
 
 
 @app.get("/health")

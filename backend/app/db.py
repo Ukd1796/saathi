@@ -37,6 +37,10 @@ ADDED_COLUMNS = [
     ("visit_drafts", "mr_said", "TEXT"),
     ("visit_drafts", "disputes", "JSON"),
     ("visit_drafts", "language", "VARCHAR(2)"),
+    ("calls", "outcome", "VARCHAR(20)"),
+    ("calls", "failure_stage", "VARCHAR(20)"),
+    ("calls", "failure_reason", "TEXT"),
+    ("calls", "warnings", "JSON"),
 ]
 
 

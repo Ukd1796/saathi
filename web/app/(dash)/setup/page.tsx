@@ -82,7 +82,7 @@ export default function SetupPage() {
         </Step>
 
         <Step n={2} done={steps[1]} active={next === 1} title="Create your voice agent"
-          sub={`A Bolna agent just for ${me.company.name}: a Hinglish/English prompt with your names, live name checking, doctor briefings and 12 fields captured per visit.`}>
+          sub={`A Bolna agent just for ${me.company.name}, in Hinglish or English. It takes the call step by step, checks every doctor, chemist and product name against your lists while the rep talks, reads the whole visit back, and saves only what the rep confirmed. It also gives doctor briefings.`}>
           {a?.localhost_warning && (
             <div className="mb-3 flex gap-2 rounded-xl bg-warn/10 px-3 py-2 text-sm text-warn">
               <TriangleAlert size={16} className="mt-0.5 shrink-0" />
