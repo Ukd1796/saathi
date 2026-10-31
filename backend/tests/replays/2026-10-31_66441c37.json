@@ -54,19 +54,15 @@
       ]
      ],
      "chemist_name": "Sharma Medical",
-     "orders": [
-      [
-       null,
-       30
-      ]
-     ],
      "stock_outs": [],
      "promises": [],
      "next_visit": "दो हफ़्ते बाद"
     },
     "ask": [
-     "order_product"
-    ]
+     "order_product",
+     "confirm:product"
+    ],
+    "note": "'twenty का order तीस' names no product: Saathi asks which, or confirms the only product with that strength ('Storvas twenty था?'); it never saves a guess unasked"
    }
   },
   {

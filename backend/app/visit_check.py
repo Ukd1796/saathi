@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from . import extract
 from .models import VisitDraft, utcnow
-from .names import Match, Resolver, _say_number, key, spoken, spoken_numbers
+from .names import HINDI_NUMBERS, Match, Resolver, _say_number, key, spoken, spoken_numbers, to_latin
 
 MISSING, NONE = "missing", "none"
 # What Saathi says when check_visit itself fails, so the rep isn't left in silence (the turn is logged).
@@ -62,13 +62,7 @@ REPEAT_WINDOW = timedelta(seconds=15)
 # only for the words it was heard as, since a visit has several.
 ONE_PER_VISIT = {"doctor", "area", "chemist"}
 
-HINDI_NUMBERS = ("शून्य एक दो तीन चार पाँच छह सात आठ नौ दस ग्यारह बारह तेरह चौदह पंद्रह सोलह सत्रह अठारह उन्नीस बीस "
-                 "इक्कीस बाईस तेईस चौबीस पच्चीस छब्बीस सत्ताईस अट्ठाईस उनतीस तीस इकतीस बत्तीस तैंतीस चौंतीस पैंतीस "
-                 "छत्तीस सैंतीस अड़तीस उनतालीस चालीस इकतालीस बयालीस तैंतालीस चवालीस पैंतालीस छियालीस सैंतालीस "
-                 "अड़तालीस उनचास पचास इक्यावन बावन तिरेपन चौवन पचपन छप्पन सत्तावन अट्ठावन उनसठ साठ इकसठ बासठ "
-                 "तिरेसठ चौंसठ पैंसठ छियासठ सड़सठ अड़सठ उनहत्तर सत्तर इकहत्तर बहत्तर तिहत्तर चौहत्तर पचहत्तर "
-                 "छिहत्तर सतहत्तर अठहत्तर उनासी अस्सी इक्यासी बयासी तिरासी चौरासी पचासी छियासी सत्तासी अट्ठासी "
-                 "नवासी नब्बे इक्यानवे बानवे तिरानवे चौरानवे पचानवे छियानवे सत्तानवे अट्ठानवे निन्यानवे").split()
+
 
 LINES = {
     "hi": {
@@ -320,6 +314,8 @@ def apply_patch(heard: dict, changes: list, same) -> tuple[dict, list]:
             h[f] = "; ".join(items) if items else (h[f] if op != "remove" else MISSING)
         else:  # samples, orders: one entry per product
             pairs, name, qty = _pairs(h.get(f)), name or UNKNOWN, c.get("quantity")
+            if _strength_as_quantity(name, qty, c.get("quote", "")):
+                qty = None  # asked instead: "<product> का order कितना था?"
             if op == "remove":
                 pairs = [p for p in pairs if not same(p[0], name)]
             else:
@@ -335,6 +331,16 @@ def apply_patch(heard: dict, changes: list, same) -> tuple[dict, list]:
         if h.get(f) != before:
             about.append(f)
     return h, list(dict.fromkeys(about))
+
+
+def _strength_as_quantity(name, qty, quote) -> bool:
+    """The quantity is the product's own strength while the rep's words hold another number too:
+    "strovas बीस का order तीस" read as Storvas 20 x 20 (31 Oct). Then the quantity isn't trusted."""
+    if qty is None:
+        return False
+    strength = set(re.findall(r"\d+", to_latin(name)))
+    said = re.findall(r"\d+", to_latin(quote))
+    return str(qty) in strength and any(n != str(qty) for n in said)
 
 
 def _answer(pending, mr_said, yes) -> str | None:

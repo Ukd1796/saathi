@@ -76,8 +76,22 @@ def _run_to_digits(run):
     return f"{number}.{digits}" if digits else number
 
 
+# Hindi numbers as speech-to-text writes them in Devanagari, 0-99 in order (also what Saathi says).
+HINDI_NUMBERS = ("शून्य एक दो तीन चार पाँच छह सात आठ नौ दस ग्यारह बारह तेरह चौदह पंद्रह सोलह सत्रह अठारह उन्नीस बीस "
+                 "इक्कीस बाईस तेईस चौबीस पच्चीस छब्बीस सत्ताईस अट्ठाईस उनतीस तीस इकतीस बत्तीस तैंतीस चौंतीस पैंतीस "
+                 "छत्तीस सैंतीस अड़तीस उनतालीस चालीस इकतालीस बयालीस तैंतालीस चवालीस पैंतालीस छियालीस सैंतालीस "
+                 "अड़तालीस उनचास पचास इक्यावन बावन तिरेपन चौवन पचपन छप्पन सत्तावन अट्ठावन उनसठ साठ इकसठ बासठ "
+                 "तिरेसठ चौंसठ पैंसठ छियासठ सड़सठ अड़सठ उनहत्तर सत्तर इकहत्तर बहत्तर तिहत्तर चौहत्तर पचहत्तर "
+                 "छिहत्तर सतहत्तर अठहत्तर उनासी अस्सी इक्यासी बयासी तिरासी चौरासी पचासी छियासी सत्तासी अट्ठासी "
+                 "नवासी नब्बे इक्यानवे बानवे तिरानवे चौरानवे पचानवे छियानवे सत्तानवे अट्ठानवे निन्यानवे").split()
+# Other spellings speech-to-text uses for the same numbers
+HINDI_NUMBER_WORDS = {w: i for i, w in enumerate(HINDI_NUMBERS)} | {"पांच": 5, "छः": 6, "छे": 6, "छै": 6}
+HINDI_NUMBER = re.compile(r"(?<![ऀ-ॿ])(" + "|".join(sorted(map(re.escape, HINDI_NUMBER_WORDS), key=len, reverse=True)) + r")(?![ऀ-ॿ])")
+
+
 def spoken_numbers(text):
-    """Speech-to-text often writes strengths as words ("telma forty"): turn them into digits."""
+    """Speech-to-text often writes strengths as words ("telma forty", "strovas बीस"): turn them into digits."""
+    text = HINDI_NUMBER.sub(lambda m: str(HINDI_NUMBER_WORDS[m.group(0)]), text)
     return NUMBER_RUN.sub(lambda m: _run_to_digits(m.group(0)) + " ", text).strip()
 
 

@@ -161,7 +161,7 @@ def process_payload(session: Session, company_id: int, payload: dict) -> Call:
         # A debrief is saved only from the draft the rep said yes to: check_visit built the read-back and
         # heard the yes itself. The transcript is never trusted for that.
         confirmed = draft is not None and draft.confirmed
-        dropped = call.call_type != "briefing" and not confirmed and cut_off(call)
+        dropped = call.call_type != "briefing" and not confirmed and cut_off(session, call)
         unconfirmed = call.call_type != "briefing" and not confirmed
         visit = None if call.call_type == "briefing" or dropped or unconfirmed else build_visit(session, call, draft)
         if call.call_type == "briefing":

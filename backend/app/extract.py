@@ -46,6 +46,7 @@ Rules:
 - Only what this reply says. Never restate items from the visit so far that the reply doesn't change.
 - quote: the MR's exact words this change comes from, copied unchanged from the reply.
 - Write names as heard, in Latin letters, keeping the strength ("telma forty", "sharma medical"). Never swap in a different name.
+- A number right after a product name is its strength and part of the name, in English or Hindi words ("<product> forty", "<product> बीस"). The quantity is the number that goes with the sample or order: "<product> बीस का order तीस" is name "<product> बीस", quantity 30. One number never counts as both.
 - A number alone ("twenty") is not a product. If the product of a sample or order wasn't named, name is null.
 - If no quantity was said, quantity is null. Never make up a number. Use the number as said (four strips is 4).
 - Samples go to the doctor, orders come from the chemist, products are what was discussed. Never move a product from one to another.

@@ -1,0 +1,96 @@
+{
+ "call": "58a48d70-f1ae-42ef-a1dd-b6ba4f747e61",
+ "script": "M4",
+ "truth": {
+  "doctor_name": "Dr Mehta",
+  "area": "Kothrud",
+  "products_discussed": [
+   "Pan D",
+   "Telma 40"
+  ],
+  "samples": [
+   [
+    "Telma 40",
+    4
+   ]
+  ],
+  "chemist_name": "Sharma Medical",
+  "orders": [
+   [
+    "Storvas 20",
+    30
+   ]
+  ],
+  "stock_outs": [],
+  "promises": [],
+  "next_visit": "दो हफ़्ते बाद"
+ },
+ "what_happened": "Recorded and right. 'twenty का तीस order' had no product: Saathi asked 'Storvas twenty था?' instead of guessing. The opening asked for the doctor's name itself after a reply split in two.",
+ "rep_turns": [
+  {
+   "saathi": "नमस्ते Ujjwal! साथी बोल रही हूँ। Visit report देनी है, या किसी doctor की briefing चाहिए?",
+   "rep": "visit report देनी हां visit report देनी है",
+   "expect": {
+    "ask": [
+     "invite",
+     "readback"
+    ]
+   }
+  },
+  {
+   "saathi": "कृपया doctor का नाम बताइए।",
+   "rep": "doctor mehta से मिला kothrud में pan d और telma forty test telma forty के चार sample दिए sharma medical में गया उसके बाद वहां पर twenty का तीस order मिला कोई stock issue नहीं था कोई promise नहीं है next visit दो हफ़्ते बाद है",
+   "expect": {
+    "visit": {
+     "doctor_name": "Dr Mehta",
+     "area": "Kothrud",
+     "products_discussed": [
+      "Pan D",
+      "Telma 40"
+     ],
+     "samples": [
+      [
+       "Telma 40",
+       4
+      ]
+     ],
+     "chemist_name": "Sharma Medical",
+     "stock_outs": [],
+     "promises": [],
+     "next_visit": "दो हफ़्ते बाद"
+    },
+    "ask": [
+     "confirm:product",
+     "order_product"
+    ]
+   }
+  },
+  {
+   "saathi": "Storvas twenty था?",
+   "rep": "हां sharma medical पर storvas order storvas twenty का order था तीस",
+   "expect": {
+    "visit": {
+     "orders": [
+      [
+       "Storvas 20",
+       30
+      ]
+     ]
+    },
+    "ask": [
+     "readback"
+    ]
+   }
+  },
+  {
+   "saathi": "Dr Mehta, Kothrud में मिले थे। Pan D और Telma forty discuss हुए। Telma forty के चार sample दिए। Sharma Medical में Storvas twenty का order तीस मिला। कोई stock issue नहीं था। कोई promise नहीं था। अगली visit दो हफ़्ते बाद। सही है?",
+   "rep": "हां सही है",
+   "expect": {
+    "ask": [
+     "recorded"
+    ]
+   }
+  }
+ ],
+ "agent_calls": []
+}

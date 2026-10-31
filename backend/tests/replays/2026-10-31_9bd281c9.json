@@ -1,0 +1,91 @@
+{
+ "call": "9bd281c9-ccb9-4e85-a6ea-ccb612bda0bb",
+ "script": "H1",
+ "truth": {
+  "doctor_name": "Dr Qureshi",
+  "area": "Wakad",
+  "products_discussed": [
+   "Pan D",
+   "Amlong 5"
+  ],
+  "samples": [
+   [
+    "Pan D",
+    6
+   ]
+  ],
+  "chemist_name": "Wellness Chemist",
+  "orders": [
+   [
+    "Amlong 5",
+    30
+   ]
+  ],
+  "stock_outs": [
+   "Ecosprin 75"
+  ],
+  "promises": [
+   "Saturday patient leaflet"
+  ],
+  "next_visit": "दस दिन बाद"
+ },
+ "what_happened": "Recorded and right: one monologue, one read-back, 'हां perfect है' recorded it. Rough STT ('amlab wakad', 'amlol five', 'wellness chems') resolved.",
+ "rep_turns": [
+  {
+   "saathi": "नमस्ते Ujjwal! साथी बोल रही हूँ। Visit report देनी है, या किसी doctor की briefing चाहिए?",
+   "rep": "visit report देनी है",
+   "expect": {
+    "ask": [
+     "invite"
+    ]
+   }
+  },
+  {
+   "saathi": "ठीक है, visit report बताइए।",
+   "rep": "मैं doctor कुरेशी amlab wakad में वहां पर हमने pan d और amlol five discuss किया pan d के छह sample दिए उसके बाद वहां से wellness chems गया amlong का order मिला तीस वहां ecosprin seventy five ख़त्म था doctor बोले pan d से patients को जल्दी आराम मिल रहा है मैंने बोला saturday को patient leaflet ला दूंगा next visit दस दिन बाद है",
+   "expect": {
+    "visit": {
+     "doctor_name": "Dr Qureshi",
+     "area": "Wakad",
+     "products_discussed": [
+      "Pan D",
+      "Amlong 5"
+     ],
+     "samples": [
+      [
+       "Pan D",
+       6
+      ]
+     ],
+     "chemist_name": "Wellness Chemist",
+     "orders": [
+      [
+       "Amlong 5",
+       30
+      ]
+     ],
+     "stock_outs": [
+      "Ecosprin 75"
+     ],
+     "promises": [
+      "Saturday patient leaflet"
+     ],
+     "next_visit": "दस दिन बाद"
+    },
+    "ask": [
+     "readback"
+    ]
+   }
+  },
+  {
+   "saathi": "Dr Qureshi, Wakad में मिले थे। Pan D और Amlong five discuss हुए। Pan D के छह sample दिए। Wellness Chemist में Amlong five का order तीस मिला। Ecosprin seventy five का stock ख़त्म था। Doctor ने बोला कि pan d se patients ko jaldi आराम मिल रहा hai। आपने promise किया कि saturday को patient leaflet ला दूंगा। अगली visit दस दिन बाद। सही है?",
+   "rep": "हां perfect है thank you",
+   "expect": {
+    "ask": [
+     "recorded"
+    ]
+   }
+  }
+ ],
+ "agent_calls": []
+}

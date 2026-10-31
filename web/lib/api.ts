@@ -65,9 +65,15 @@ export function useApi<T>(path: string | null, pollMs?: number) {
   return { data, error, loading, reload, setData };
 }
 
+// The backend stores times in UTC without a zone ("2026-10-31T09:02:54"); the browser would read that as
+// local time and show it 5½ hours early. A date alone ("2026-11-07") is left as it is.
+export function parseTime(iso: string) {
+  return new Date(/T\d{2}:\d{2}/.test(iso) && !/(Z|[+-]\d{2}:?\d{2})$/.test(iso) ? `${iso}Z` : iso);
+}
+
 export function ago(iso: string | null | undefined) {
   if (!iso) return "–";
-  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  const s = (Date.now() - parseTime(iso).getTime()) / 1000;
   if (s < 60) return "just now";
   if (s < 3600) return `${Math.floor(s / 60)} min ago`;
   if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
@@ -77,7 +83,7 @@ export function ago(iso: string | null | undefined) {
 
 export function when(iso: string | null | undefined) {
   if (!iso) return "–";
-  return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return parseTime(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 export type Me = {

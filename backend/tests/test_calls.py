@@ -94,21 +94,64 @@ def test_weekday_schedule_skips_weekends_and_unanswered_call_is_retried_once(cli
         assert len(retries) == 1 and retries[0].purpose == "briefing"
 
 
-def test_cut_off_report_is_not_saved_and_saathi_calls_back(client, company):
+def dropped_call(client, company, call_id, heard=None):
+    """A call the rep hung up on before the read-back, with the draft check_visit had built so far."""
+    from app.ingest import find_rep
+    from app.models import VisitDraft
     p = copy.deepcopy(PAYLOAD)
-    p["id"] = "dropped-1"
+    p["id"] = call_id
     p["termination_reason"] = "user_hung_up"
     p["transcript"] = "\n".join(p["transcript"].splitlines()[:2])  # the rep started, then the line dropped
     p["extracted_data"]["Visit"]["readback_confirmed"] = "no"
-    r = webhook(client, company, p).json()
+    p.setdefault("telephony_data", {})["provider_call_id"] = f"sid-{call_id}"
+    if heard:
+        with client.Session() as s:
+            rep = find_rep(s, company.id, ASHA)
+            s.add(VisitDraft(company_id=company.id, rep_id=rep.id, call_sid=f"sid-{call_id}", heard=heard,
+                             fields={"doctor_name": heard.get("doctor"), "area": heard.get("area")}))
+            s.commit()
+    return p
+
+
+def test_cut_off_report_is_not_saved_and_saathi_calls_back(client, company):
+    p = dropped_call(client, company, "dropped-1", heard={"doctor": "Dr Mehta", "area": "Kothrud", "products": "missing"})
+    r = webhook(client, company, p, confirmed=False).json()
     assert "cut off" in r["note"]
     with client.Session() as s:
         assert s.query(Visit).count() == 0
         sc = s.query(ScheduledCall).one()
-        assert sc.purpose == "resume" and sc.source_call_id == "dropped-1" and "Mehtaa" in sc.note
-    webhook(client, company, p)
+        assert sc.purpose == "resume" and sc.source_call_id == "dropped-1" and "Dr Mehta" in sc.note
+    webhook(client, company, p, confirmed=False)
     with client.Session() as s:
         assert s.query(ScheduledCall).count() == 1  # one resume per call, however many webhooks
+
+
+def test_a_hello_and_a_hang_up_is_not_a_cut_off_report(client, company):
+    """31 Oct: the rep said "hello" and hung up; a resume call was booked for a report never started."""
+    webhook(client, company, dropped_call(client, company, "hello-1"), confirmed=False)
+    webhook(client, company, dropped_call(client, company, "hello-2", heard={"doctor": "missing"}), confirmed=False)
+    with client.Session() as s:
+        assert s.query(ScheduledCall).count() == 0
+
+
+def test_a_resume_call_never_books_another(client, company):
+    """31 Oct: an unanswered resume call booked the next resume call."""
+    with client.Session() as s:
+        from app.ingest import find_rep
+        s.add(OutboundCall(company_id=company.id, rep_id=find_rep(s, company.id, ASHA).id, reason="resume",
+                           execution_id="resume-1"))
+        s.commit()
+    webhook(client, company, dropped_call(client, company, "resume-1", heard={"doctor": "Dr Mehta"}), confirmed=False)
+    with client.Session() as s:
+        assert s.query(ScheduledCall).count() == 0
+
+
+def test_a_recorded_visit_cancels_the_waiting_resume_call(client, company, live, monkeypatch):
+    webhook(client, company, dropped_call(client, company, "dropped-2", heard={"doctor": "Dr Mehta"}), confirmed=False)
+    webhook(client, company, PAYLOAD)  # the rep then reports the visit in a new call
+    with client.Session() as s:
+        sc = s.query(ScheduledCall).filter_by(purpose="resume").one()
+        assert not sc.active and "reported since" in sc.last_result
 
 
 def test_finished_call_is_not_treated_as_cut_off(client, company):

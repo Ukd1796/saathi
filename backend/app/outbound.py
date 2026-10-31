@@ -185,6 +185,8 @@ def run_scheduled(session):
             sc.last_result = "skipped: rep has left"
         elif sc.purpose == "report" and reported_today(session, sc.rep_id):
             sc.last_result = "skipped: already reported today"
+        elif sc.purpose == "resume" and reported_since(session, sc.rep_id, sc.created_at):
+            sc.last_result = "skipped: the rep has reported since"
         else:
             row = call_rep(session, session.get(Company, sc.company_id), sc.rep,
                            "resume" if sc.purpose == "resume" else "scheduled",
@@ -222,40 +224,61 @@ def maybe_retry(session, call: Call):
 
 # ---- reports cut off before the read-back ---------------------------------------------------------
 
-def cut_off(call: Call) -> bool:
-    """The rep was mid-report and the line dropped: they hung up (or the call hit its time limit),
-    the call had started, and the extraction says the read-back was never confirmed."""
-    if call.call_type == "briefing" or call.rep is None or (call.duration_s or 0) < 15:
+def started(draft) -> bool:
+    """The rep had begun telling a visit: the call's draft holds something they said, and they never
+    confirmed it. A "hello" and a hang-up leaves no draft (31 Oct: it booked a resume call)."""
+    return draft is not None and not draft.confirmed and any(
+        str(v or "").strip().lower() not in ("", "missing") for k, v in (draft.heard or {}).items() if k != "promise_material")
+
+
+def cut_off(session, call: Call) -> bool:
+    """The rep was mid-report and the line dropped: they hung up (or the call hit its time limit)
+    before saying yes to the read-back, with part of the visit already told."""
+    if call.call_type == "briefing" or call.rep is None or call.visit is not None:
         return False
     raw = call.raw or {}
     if (raw.get("termination_reason") or "") not in ("user_hung_up", "call-disconnected", "network_error",
                                                      "max_duration_reached"):
         return False
-    from .extraction import readback_confirmed
-    user_lines = [l for l in (call.transcript or "").splitlines() if l.startswith("user:")]
-    return bool(user_lines) and readback_confirmed(call.extracted) is False
+    from .ingest import call_draft
+    return started(call_draft(session, call))
 
 
-def resume_notes(call: Call) -> str:
-    """What the cut-off call already captured, for the agent to read back on the resume call."""
-    from .extraction import parse_visit
-    fields = parse_visit(call.extracted) or {}
+def reported_since(session, rep_id, since) -> bool:
+    return session.scalar(select(func.count(Visit.id)).where(Visit.rep_id == rep_id, Visit.visited_at >= since)) > 0
+
+
+def cancel_resumes(session, rep_id):
+    """The rep recorded a visit: a resume call still waiting for an earlier cut-off report goes."""
+    for sc in session.scalars(select(ScheduledCall).where(ScheduledCall.rep_id == rep_id, ScheduledCall.purpose == "resume",
+                                                          ScheduledCall.active.is_(True))):
+        sc.active, sc.last_result = False, "cancelled: the rep has reported since"
+    session.commit()
+
+
+def resume_notes(draft) -> str:
+    """What the cut-off call's draft already held, for the agent to read back on the resume call."""
+    fields = draft.fields or {}
     parts = []
     for key, label in (("doctor_name", "doctor"), ("area", "area"), ("products_discussed", "discussed"),
                        ("samples", "samples"), ("orders", "orders"), ("chemist_name", "chemist"),
                        ("stock_outs", "stock-outs"), ("promises", "promises"), ("next_visit", "next visit")):
         v = fields.get(key)
         if isinstance(v, list):  # samples/orders are (name, qty) pairs, the rest plain strings
-            v = ", ".join(f"{x[0]} {x[1]}" if isinstance(x, tuple) else str(x) for x in v)
+            v = ", ".join(f"{x[0]} {x[1]}" if isinstance(x, (list, tuple)) else str(x) for x in v)
         if v:
             parts.append(f"{label}: {v}")
     return "; ".join(parts)
 
 
 def maybe_resume(session, company: Company, call: Call):
-    if not cut_off(call):
+    # A resume call never books another: on 31 Oct an unanswered one booked the next, and so on.
+    if session.scalar(select(OutboundCall).where(OutboundCall.execution_id == call.id, OutboundCall.reason == "resume")):
+        return None
+    if not cut_off(session, call):
         return None
     if session.scalar(select(ScheduledCall).where(ScheduledCall.source_call_id == call.id)):
         return None
+    from .ingest import call_draft
     return schedule_once(session, company.id, call.rep_id, "resume", RESUME_AFTER,
-                         note=resume_notes(call), source_call_id=call.id)
+                         note=resume_notes(call_draft(session, call)), source_call_id=call.id)

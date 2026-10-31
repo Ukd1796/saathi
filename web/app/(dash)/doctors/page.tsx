@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ArrowDownUp, CalendarClock, MapPin, Stethoscope, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { ago, useApi } from "@/lib/api";
+import { ago, parseTime, useApi } from "@/lib/api";
 import { useFilters } from "@/lib/use-filters";
 import { Avatar, Badge, Card, EmptyState, FilterSelect, LoadingRows, PageHeader, SearchInput, Table, Tabs, Td, Tr } from "@/components/ui";
 
@@ -21,7 +21,7 @@ const SORTS: { value: Sort; label: string }[] = [
 ];
 
 const uniq = (xs: (string | null)[]) => [...new Set(xs.filter(Boolean))].sort() as string[];
-const daysSince = (iso: string | null) => (iso ? (Date.now() - new Date(iso).getTime()) / 86400000 : Infinity);
+const daysSince = (iso: string | null) => (iso ? (Date.now() - parseTime(iso).getTime()) / 86400000 : Infinity);
 const isDue = (d: DoctorRow) => daysSince(d.last_visit) > DUE_DAYS;
 
 const VIEWS: Record<View, (d: DoctorRow) => boolean> = {

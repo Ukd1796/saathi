@@ -1,0 +1,75 @@
+{
+ "call": "ac4a0650-dc9f-4f0c-8294-65777a241b44",
+ "script": "M4",
+ "truth": {
+  "doctor_name": "Dr Mehta",
+  "area": "Kothrud",
+  "products_discussed": [
+   "Pan D",
+   "Telma 40"
+  ],
+  "samples": [
+   [
+    "Telma 40",
+    4
+   ]
+  ],
+  "chemist_name": "Sharma Medical",
+  "orders": [
+   [
+    "Storvas 20",
+    30
+   ]
+  ],
+  "stock_outs": [],
+  "promises": [],
+  "next_visit": "दो हफ़्ते बाद"
+ },
+ "what_happened": "The read-back never played (Bolna, after an interruption) and the call timed out. The read-back was also wrong: 'strovas बीस का order तीस' was read as Storvas 20 x 20, the strength taken for the quantity.",
+ "rep_turns": [
+  {
+   "saathi": "नमस्ते Ujjwal! साथी बोल रही हूँ। Visit report देनी है, या किसी doctor की briefing चाहिए?",
+   "rep": "visit report देंगे",
+   "expect": {
+    "ask": [
+     "invite"
+    ]
+   }
+  },
+  {
+   "saathi": "ठीक है, बताइए।",
+   "rep": "doctor mehta mehta samila kothrud मैं pan d और telma forty discussed yeah telma चालीस के चार sample दिए sharma medical पर strovas बीस का order तीस मिला कोई stock issue नहीं था कोई promise नहीं है next visit दो हफ़्ते बाद है",
+   "expect": {
+    "visit": {
+     "doctor_name": "Dr Mehta",
+     "area": "Kothrud",
+     "products_discussed": [
+      "Pan D",
+      "Telma 40"
+     ],
+     "samples": [
+      [
+       "Telma 40",
+       4
+      ]
+     ],
+     "chemist_name": "Sharma Medical",
+     "orders": [
+      [
+       "Storvas 20",
+       30
+      ]
+     ],
+     "stock_outs": [],
+     "promises": [],
+     "next_visit": "दो हफ़्ते बाद"
+    },
+    "ask": [
+     "readback"
+    ],
+    "note": "'<product> बीस का order तीस' is product '<product> बीस', quantity 30"
+   }
+  }
+ ],
+ "agent_calls": []
+}

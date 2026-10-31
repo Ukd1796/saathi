@@ -296,3 +296,18 @@ def test_naming_the_product_fills_the_unnamed_order_even_if_the_quantity_was_mis
     r = reply(client, company, monkeypatch, "Amlong 5 ka order tees",
               [change("order", name="Amlong 5", quantity=30, quote="Amlong 5 ka order tees")])
     assert r["visit"]["orders"] == [("Amlong 5", 30)] and r["status"] == "complete"
+
+
+def test_a_strength_read_as_the_quantity_is_asked_not_saved(client, company, monkeypatch):
+    """Replay ac4a0650: "strovas बीस का order तीस" came back as Storvas 20 x 20, the strength taken for
+    the quantity. When the quantity equals the strength and the rep said another number, Saathi asks."""
+    patch = [c if c["item"] != "order" else change("order", name="amlong 5", quantity=5, quote="amlong पांच का order तीस")
+             for c in MONOLOGUE_PATCH]
+    r = reply(client, company, monkeypatch, MONOLOGUE.replace("twenty ka order tees", "amlong पांच का order तीस"), patch)
+    assert (r["asked"], r["say"]) == ("qty_order", "How much was the Amlong five order?")
+
+
+def test_hindi_number_words_count_as_numbers_in_names():
+    from app.names import to_latin
+    assert to_latin("strovas बीस का order तीस") == "strovas 20 ka order 30"
+    assert to_latin("दोस्त एकदम") == "dost ekadam"  # only whole words

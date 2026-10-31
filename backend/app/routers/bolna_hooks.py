@@ -16,7 +16,7 @@ from ..db import get_session
 from ..ingest import find_rep, process_payload
 from ..models import AgentTurn, Company, Doctor, Promise, Rep, ToolEvent
 from ..names import Resolver, parse_items, spoken
-from ..outbound import greeting, maybe_callback, maybe_resume, maybe_retry, rep_context
+from ..outbound import cancel_resumes, greeting, maybe_callback, maybe_resume, maybe_retry, rep_context
 from ..visit_check import FALLBACK, check_visit
 
 log = logging.getLogger("saathi.bolna")
@@ -66,6 +66,8 @@ async def webhook(company_id: int, request: Request, x_webhook_secret: str = Hea
     maybe_retry(session, call)
     if call.status == "completed":
         maybe_resume(session, company, call) or maybe_callback(session, company, call)
+    if call.visit is not None and call.rep_id:
+        cancel_resumes(session, call.rep_id)
     return {"ok": True, "call_id": call.id, "status": call.status, "note": call.process_note}
 
 

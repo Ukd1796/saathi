@@ -1,0 +1,84 @@
+{
+ "call": "12c990a7-c8e6-400e-ab3e-4099a8e463d3",
+ "script": "M2",
+ "truth": {
+  "doctor_name": "Dr Patil",
+  "area": "Hadapsar",
+  "products_discussed": [
+   "Montair LC"
+  ],
+  "samples": [
+   [
+    "Montair LC",
+    3
+   ]
+  ],
+  "chemist_name": "Krishna Medical",
+  "orders": [],
+  "stock_outs": [],
+  "promises": [],
+  "next_visit": "अगले हफ़्ते"
+ },
+ "what_happened": "Recorded and right. 'stock theek hai' reached the backend as 'ठीक है', so the stock question was fair. Area came from Dr Patil's record.",
+ "rep_turns": [
+  {
+   "saathi": "नमस्ते Ujjwal! साथी बोल रही हूँ। Visit report देनी है, या किसी doctor की briefing चाहिए?",
+   "rep": "हां visit report देनी है",
+   "expect": {
+    "ask": [
+     "invite"
+    ]
+   }
+  },
+  {
+   "saathi": "ठीक है, visit report बताइए।",
+   "rep": "doctor patil से मिला montair lc discussed किया तीन sample दिए krishna medical पर कोई order नहीं था ठीक है कोई promise नहीं हुआ next visit अगले हफ़्ते",
+   "expect": {
+    "visit": {
+     "doctor_name": "Dr Patil",
+     "area": "Hadapsar",
+     "products_discussed": [
+      "Montair LC"
+     ],
+     "samples": [
+      [
+       "Montair LC",
+       3
+      ]
+     ],
+     "chemist_name": "Krishna Medical",
+     "orders": [],
+     "promises": [],
+     "next_visit": "अगले हफ़्ते"
+    },
+    "ask": [
+     "stock_outs",
+     "readback"
+    ],
+    "note": "'stock theek hai' arrived as just 'ठीक है'; asking about stock is fine"
+   }
+  },
+  {
+   "saathi": "Krishna Medical में किसी product का stock ख़त्म था?",
+   "rep": "नहीं stock ठीक था",
+   "expect": {
+    "visit": {
+     "stock_outs": []
+    },
+    "ask": [
+     "readback"
+    ]
+   }
+  },
+  {
+   "saathi": "Dr Patil, Hadapsar में मिले थे। Montair LC discuss हुए। Montair LC के तीन sample दिए। Krishna Medical में कोई order नहीं मिला। कोई stock issue नहीं था। कोई promise नहीं था। अगली visit अगले हफ़्ते। सही है?",
+   "rep": "हां सही है",
+   "expect": {
+    "ask": [
+     "recorded"
+    ]
+   }
+  }
+ ],
+ "agent_calls": []
+}
