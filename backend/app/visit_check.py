@@ -11,8 +11,9 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
+from . import extract
 from .models import VisitDraft, utcnow
-from .names import Resolver, _say_number, spoken, spoken_numbers
+from .names import Match, Resolver, _say_number, key, spoken, spoken_numbers
 
 MISSING, NONE = "missing", "none"
 # What Saathi says when check_visit itself fails, so the rep isn't left in silence (the turn is logged).
@@ -21,6 +22,13 @@ NONE_WORDS = {"none", "no", "nil"}  # the tool's own protocol values; the agent 
 # Asked in this order; stock-outs only matter once a chemist was visited.
 REQUIRED = ["doctor", "area", "products", "samples", "chemist", "stock_outs", "promise", "next_visit"]
 HEARD = REQUIRED + ["orders", "feedback", "promise_material"]
+# The fields the voice agent used to fill in itself. A call without any of them carries only the rep's
+# words, and the backend reads them (extract.py).
+AGENT_FIELDS = REQUIRED + ["orders", "feedback"]
+PATCH_FIELD = {"doctor": "doctor", "area": "area", "chemist": "chemist", "next_visit": "next_visit",
+               "feedback": "feedback", "promise": "promise", "product": "products", "stock_out": "stock_outs",
+               "sample": "samples", "order": "orders"}
+UNKNOWN = "?"  # a sample or order whose product wasn't named
 # Read-back parts, and the saved fields each one shows. Names and numbers are compared in code; free
 # text (feedback, promise, next visit) is reworded by the agent between turns, so it only counts as
 # changed when the agent says the rep's reply was about it.
@@ -50,6 +58,9 @@ def detect_language(said: str, previous: str | None) -> str | None:
 # The agent sometimes calls the tool twice before the rep has answered; the same fields again within
 # this window mean the question is already out, so Saathi waits instead of asking it twice.
 REPEAT_WINDOW = timedelta(seconds=15)
+# A doctor, area or chemist the rep confirmed stays confirmed however the agent spells it next; a product
+# only for the words it was heard as, since a visit has several.
+ONE_PER_VISIT = {"doctor", "area", "chemist"}
 
 HINDI_NUMBERS = ("शून्य एक दो तीन चार पाँच छह सात आठ नौ दस ग्यारह बारह तेरह चौदह पंद्रह सोलह सत्रह अठारह उन्नीस बीस "
                  "इक्कीस बाईस तेईस चौबीस पच्चीस छब्बीस सत्ताईस अट्ठाईस उनतीस तीस इकतीस बत्तीस तैंतीस चौंतीस पैंतीस "
@@ -67,6 +78,7 @@ LINES = {
         "chemist": "Doctor के पास किसी chemist पे गए?", "stock_outs": "{chemist} में किसी product का stock ख़त्म था?",
         "promise": "Doctor को कुछ promise किया?", "next_visit": "अगली visit कब है?",
         "qty_sample": "{product} के कितने sample दिए?", "qty_order": "{product} का order कितना था?",
+        "which_sample": "{n} sample किस product के दिए?", "which_order": "{n} का order किस product का था?",
         "pick": "कौनसा {kind} था, {options}?", "repeat": "{kind} का नाम फिर से बताइए?", "confirm": "{name} था?",
         "or": " या ", "and": " और ", "kinds": {"product": "product", "doctor": "doctor", "chemist": "chemist", "area": "area"},
         "met": "{doctor}, {area} में मिले थे।", "discussed": "{products} discuss हुए।",
@@ -75,7 +87,7 @@ LINES = {
         "no_order": "{chemist} में कोई order नहीं मिला।", "no_chemist": "किसी chemist पे नहीं गए।",
         "stock": "{products} का stock ख़त्म था।", "no_stock": "कोई stock issue नहीं था।",
         "feedback": "Doctor ने बोला कि {feedback}।", "promised": "आपने promise किया कि {promise}।",
-        "no_promise": "कोई promise नहीं था।", "next": "अगली visit {next_visit}।", "ask": "सही है?",
+        "no_promise": "कोई promise नहीं था।", "next": "अगली visit {next_visit}।", "no_next": "अगली visit अभी तय नहीं है।", "ask": "सही है?",
         "recorded": "ठीक है, record हो गया।", "followup": " अगली visit के दिन सुबह मैं briefing के लिए call करूँगी।",
         "thanks": " धन्यवाद!", "whats_wrong": "क्या ठीक नहीं है?",
         "flag": "ठीक है, {item} मैं आपके शब्दों में रख लेती हूँ, manager एक बार देख लेंगे। बाकी सब सही है?",
@@ -93,6 +105,7 @@ LINES = {
         "chemist": "Did you visit any chemist near the doctor?", "stock_outs": "Was anything out of stock at {chemist}?",
         "promise": "Did you promise the doctor anything?", "next_visit": "When is the next visit?",
         "qty_sample": "How many samples of {product} did you give?", "qty_order": "How much was the {product} order?",
+        "which_sample": "Which product were the {n} samples of?", "which_order": "Which product was the order of {n} for?",
         "pick": "Which {kind} was it, {options}?", "repeat": "Could you say the {kind} name again?", "confirm": "Was it {name}?",
         "or": " or ", "and": " and ", "kinds": {"product": "product", "doctor": "doctor", "chemist": "chemist", "area": "area"},
         "met": "You met {doctor} in {area}.", "discussed": "You discussed {products}.",
@@ -101,7 +114,7 @@ LINES = {
         "no_order": "At {chemist} there was no order.", "no_chemist": "You didn't visit a chemist.",
         "stock": "{products} was out of stock there.", "no_stock": "There were no stock issues.",
         "feedback": "The doctor said {feedback}.", "promised": "You promised {promise}.",
-        "no_promise": "There was no promise.", "next": "The next visit is {next_visit}.", "ask": "Is that right?",
+        "no_promise": "There was no promise.", "next": "The next visit is {next_visit}.", "no_next": "The next visit isn't fixed yet.", "ask": "Is that right?",
         "recorded": "Okay, it's recorded.", "followup": " I'll call you that morning with a briefing.",
         "thanks": " Thank you!", "whats_wrong": "What's not right?",
         "flag": "Okay, I'll keep the {item} in your words and your manager will check it. Is the rest right?",
@@ -159,12 +172,19 @@ def check_visit(session, company, rep, fields: dict) -> dict:
     call_sid = str(fields.get("call_sid") or "").strip()
     draft = session.scalar(select(VisitDraft).where(VisitDraft.company_id == company.id,
                                                     VisitDraft.call_sid == call_sid)) if call_sid else None
+    if not any(k in fields for k in AGENT_FIELDS):
+        fields = _read_reply(session, company, rep, draft, fields)
+        if fields is None:
+            return {"status": "repeat", "say": "", "matches": [], "asked": None}
     # The draft remembers what was heard: the agent tends to send only its latest reply's fields, and a
     # "missing" then would wipe the doctor named two turns ago (30 Oct: "Which doctor?" asked twice).
-    # A value only changes when the agent sends a new one; "none" still clears it.
+    # A value only changes when the agent sends a new one. A "none" clears it only if the rep's reply was
+    # about that item: on 31 Oct the agent sent only the next visit and "none" for everything else, which
+    # wiped the doctor, chemist and order.
     if draft and draft.heard:
-        fields = {**fields, **{k: v for k, v in draft.heard.items()
-                               if v and _value(v) != MISSING and _value(fields.get(k)) == MISSING}}
+        about = {i.strip() for i in str(fields.get("about") or "").split(",")}
+        kept = lambda k: _value(fields.get(k)) == MISSING or _value(fields.get(k)) == NONE and k not in about
+        fields = {**fields, **{k: v for k, v in draft.heard.items() if v and _value(v) != MISSING and kept(k)}}
     heard = {k: str(fields.get(k) or "").strip() for k in HEARD}
     mr_said = str(fields.get("mr_said") or "").strip()
     guess = "en" if str(fields.get("language", "")).lower().startswith("en") else "hi"  # the agent's, last resort
@@ -172,13 +192,22 @@ def check_visit(session, company, rep, fields: dict) -> dict:
     yes = str(fields.get("confirms_readback") or "").strip().lower().startswith("y")
     # The agent called again on its own: a read-back is out and the rep has said nothing since, or the
     # same words arrive again straight away. (The same "haan" later, after Saathi spoke, is a new reply.)
+    # Also when nothing reached the agent but Saathi's own line (31 Oct: it sent "Kothrud था?" as the
+    # rep's words), or nothing at all and nothing changed, however long after.
     recent = draft is not None and utcnow() - draft.updated_at < REPEAT_WINDOW
     if draft and (draft.confirmed  # already recorded; the closing line has been said
                   or draft.readback and not mr_said
                   or mr_said and mr_said == draft.mr_said and recent
-                  or not mr_said and not yes and draft.heard == heard and recent):
+                  or mr_said and draft.said and key(mr_said) == key(draft.said)
+                  or not mr_said and not yes and draft.heard == heard):
         return {"status": "repeat", "say": "", "matches": [], "asked": None}
-    result = _next_line(session, company, rep, fields, lang)
+    pinned = dict(draft.pinned or {}) if draft else {}
+    if draft and draft.pending and mr_said:
+        answer = _answer(draft.pending, mr_said, yes)
+        if answer:
+            p = draft.pending
+            pinned[f'{p["kind"]}|{"*" if p["kind"] in ONE_PER_VISIT else key(p["heard"])}'] = answer
+    result = _next_line(session, company, rep, fields, lang, pinned)
     if call_sid and draft is None:
         draft = VisitDraft(company_id=company.id, rep_id=rep.id if rep else None, call_sid=call_sid, disputes={})
         session.add(draft)
@@ -189,6 +218,9 @@ def check_visit(session, company, rep, fields: dict) -> dict:
     if draft.read_back and result["status"] == "complete":
         result = _after_read_back(draft, result, fields, yes, lang, company)
     draft.fields, draft.heard, draft.mr_said, draft.language = result["visit"], heard, mr_said, lang
+    draft.pending, draft.pinned = result.get("pending"), pinned
+    if result["say"]:
+        draft.said = result["say"]
     if result["status"] == "complete":  # a read-back (whole or only the changed parts) is out
         flagged = (draft.read_back or {}).get("flagged", [])
         draft.readback, draft.read_back = result["say"], {**result["visit"], "flagged": flagged}
@@ -231,15 +263,102 @@ def _after_read_back(draft, result, fields, yes, lang, company) -> dict:
     return {**result, "status": "recorded", "say": L["recorded"] + follow + L["thanks"]}
 
 
+def _read_reply(session, company, rep, draft, fields) -> dict | None:
+    """The agent sent only the rep's words: read what they change (extract.py) and turn that into the
+    fields check_visit works on. None when there is no new reply to read."""
+    mr_said = str(fields.get("mr_said") or "").strip()
+    heard = {k: MISSING for k in HEARD} | dict((draft.heard if draft else None) or {})
+    if draft and (draft.confirmed or not mr_said or draft.said and key(mr_said) == key(draft.said)
+                  or mr_said == draft.mr_said and utcnow() - draft.updated_at < REPEAT_WINDOW):
+        return None
+    if not mr_said:
+        return {**fields, **heard}
+    # Replays pass the line the rep actually answered; on a call it is Saathi's last line.
+    saathi = str(fields.get("saathi_said") or (draft.said if draft else "") or "")
+    resolver = Resolver(session, company.id, rep)
+
+    def same(a, b):
+        if a == b or key(a) and key(a) == key(b):
+            return True
+        ma, mb = (resolver.resolve(x, "product") for x in (a, b))
+        return bool(ma.best) and ma.best == mb.best and "low" not in (ma.confidence, mb.confidence)
+
+    notes = str(fields.get("resume_notes") or "").strip()
+    if draft is None and notes and "{{" not in notes:  # a resume call: start from the cut-off report's notes
+        heard, _ = apply_patch(heard, extract.extract(heard, "", notes)["changes"], same)
+    patch = extract.extract(heard, saathi, mr_said)
+    new, about = apply_patch(heard, patch["changes"], same)
+    yes = patch["reply"] == "yes" and not about
+    return {**fields, **new, "about": ",".join(about), "confirms_readback": "yes" if yes else "no",
+            "dropped": patch["dropped"], "reply": patch["reply"]}
+
+
+def apply_patch(heard: dict, changes: list, same) -> tuple[dict, list]:
+    """Apply a reply's changes to the visit as heard. Returns the new visit and the items the reply
+    changed or said were wrong. Items the reply didn't mention are left exactly as they were."""
+    h, about = dict(heard), []
+    for c in changes:
+        f, op, name = PATCH_FIELD[c["item"]], c["op"], (c.get("name") or "").strip()
+        before = h.get(f)
+        if op == "dispute":
+            about.append(f)
+            continue
+        if op == "none":
+            h[f] = NONE
+        elif f in ("doctor", "area", "chemist"):
+            h[f] = name or h[f]
+        elif f in ("next_visit", "feedback", "promise"):
+            h[f] = (c.get("text") or "").strip() or h[f]
+            if f == "promise":
+                h["promise_material"] = "yes" if c.get("material") else "no"
+        elif f in ("products", "stock_outs"):
+            items = _items(h.get(f))
+            if name and op == "remove":
+                items = [i for i in items if not same(i, name)]
+            elif name and not any(same(i, name) for i in items):
+                items.append(name)
+            h[f] = "; ".join(items) if items else (h[f] if op != "remove" else MISSING)
+        else:  # samples, orders: one entry per product
+            pairs, name, qty = _pairs(h.get(f)), name or UNKNOWN, c.get("quantity")
+            if op == "remove":
+                pairs = [p for p in pairs if not same(p[0], name)]
+            else:
+                at = next((i for i, p in enumerate(pairs) if same(p[0], name)), None)
+                unknown = [i for i, p in enumerate(pairs) if p[0] == UNKNOWN]
+                if at is None and name != UNKNOWN and unknown:  # the product of an earlier "twenty का order तीस"
+                    # the one with the same quantity, else the only one (STT and the model mix up
+                    # strengths and quantities: "Storvas twenty का order तीस" was once read as 20)
+                    at = next((i for i in unknown if qty in (None, pairs[i][1])), unknown[0] if len(unknown) == 1 else None)
+                entry = (name, qty if qty is not None else (pairs[at][1] if at is not None else None))
+                pairs = pairs[:at] + [entry] + pairs[at + 1:] if at is not None else pairs + [entry]
+            h[f] = "; ".join(f"{n}: {q if q is not None else '?'}" for n, q in pairs) or MISSING
+        if h.get(f) != before:
+            about.append(f)
+    return h, list(dict.fromkeys(about))
+
+
+def _answer(pending, mr_said, yes) -> str | None:
+    """The name the rep's reply settles a name question on: the offered name said back, or a yes
+    when only one name was offered ("Kothrud था?" - "हां"). Otherwise the question stays open."""
+    said = key(mr_said)
+    named = [o for o in pending["options"] if key(o) and key(o) in said]
+    if len(named) == 1:
+        return named[0]
+    return pending["options"][0] if yes and len(pending["options"]) == 1 else None
+
+
 def _differs(group, visit, read_back) -> bool:
     norm = lambda v: json.loads(json.dumps([(v or {}).get(k) for k in GROUPS[group]]))  # tuples come back as lists
     return norm(visit) != norm(read_back)
 
 
-def _next_line(session, company, rep, fields, lang) -> dict:
+def _next_line(session, company, rep, fields, lang, pinned=None) -> dict:
     L = LINES[lang]
     resolver = Resolver(session, company.id, rep)
     values = {k: _value(fields.get(k)) for k in REQUIRED + ["orders", "feedback"]}
+    for k in ("doctor", "area"):  # every visit has these: "none" means the agent lost them, so ask
+        if values[k] == NONE:
+            values[k] = MISSING
     samples, orders = _pairs(fields.get("samples")), _pairs(fields.get("orders"))
     stock = [s.split(":")[0].strip() for s in _items(fields.get("stock_outs"))]  # names only, no quantities
 
@@ -255,10 +374,15 @@ def _next_line(session, company, rep, fields, lang) -> dict:
         if values[kind] not in (MISSING, NONE):
             heard.append((kind, values[kind]))
     for name in _items(fields.get("products")) + [n for n, _ in samples + orders] + stock:
-        if ("product", name) not in heard:
+        if name != UNKNOWN and ("product", name) not in heard:
             heard.append(("product", name))
     matches = dict(zip(heard, resolver.resolve_all(heard)))
-    name = lambda kind, text: spoken(matches[(kind, text)].best or text)
+    for (kind, text), m in matches.items():  # names the rep already confirmed in this call
+        pin = (pinned or {}).get(f"{kind}|{key(text)}") or (
+            (pinned or {}).get(f"{kind}|*") if kind in ONE_PER_VISIT and m.confidence != "high" else None)
+        if pin:
+            matches[(kind, text)] = Match(heard=text, kind=kind, best=pin, confidence="high", score=1.0)
+    name = lambda kind, text: spoken(getattr(matches.get((kind, text)), "best", None) or text)
 
     def best(kind, text):
         m = matches.get((kind, text))
@@ -280,9 +404,9 @@ def _next_line(session, company, rep, fields, lang) -> dict:
         "materials": [promise] if promise and str(fields.get("promise_material", "")).lower().startswith("y") else [],
     }
 
-    def reply(status, say, parts=None, asked=None):
+    def reply(status, say, parts=None, asked=None, pending=None):
         return {"status": status, "say": say, "visit": visit, "parts": parts or {}, "asked": asked,
-                "matches": [m.as_dict() for m in matches.values()]}
+                "pending": pending, "matches": [m.as_dict() for m in matches.values()]}
 
     # 1. a name that matched nothing on the lists
     for (kind, text), m in matches.items():
@@ -290,29 +414,37 @@ def _next_line(session, company, rep, fields, lang) -> dict:
             options = [spoken(o) for o in m.alternatives]
             k = L["kinds"][kind]
             if options:
-                return reply("unclear", L["pick"].format(kind=k, options=L["or"].join(options)), asked=f"pick:{kind}")
+                return reply("unclear", L["pick"].format(kind=k, options=L["or"].join(options)), asked=f"pick:{kind}",
+                             pending={"kind": kind, "heard": text, "options": m.alternatives})
             return reply("unclear", L["repeat"].format(kind=k), asked=f"repeat:{kind}")
     # 2. a guess the matcher itself says must be confirmed (e.g. only the strength was heard)
-    for m in matches.values():
+    for (kind, text), m in matches.items():
         if m.confidence == "medium" and m.hint:
-            return reply("unclear", L["confirm"].format(name=spoken(m.best)), asked=f"confirm:{m.kind}")
-    # 3. nothing about the visit yet: invite the whole of it, not one item; else the first missing item
+            return reply("unclear", L["confirm"].format(name=spoken(m.best)), asked=f"confirm:{kind}",
+                         pending={"kind": kind, "heard": text, "options": [m.best]})
+    # 3. a sample or order whose product wasn't named ("twenty का order तीस"): ask which, never guess
+    for pairs, line in ((samples, "which_sample"), (orders, "which_order")):
+        for product, n in pairs:
+            if product == UNKNOWN:
+                return reply("missing", L[line].format(n=say_quantity(n, lang) if n is not None else "").strip(),
+                             asked=line)
+    # 4. nothing about the visit yet: invite the whole of it, not one item; else the first missing item
     if all(values[k] == MISSING for k in REQUIRED):
         return reply("missing", L["invite"], asked="visit")
-    for key in REQUIRED:
-        if key == "stock_outs" and values["chemist"] in (MISSING, NONE):
+    for item in REQUIRED:
+        if item == "stock_outs" and values["chemist"] in (MISSING, NONE):
             continue
-        if values[key] == MISSING:
-            return reply("missing", L[key].format(doctor=name("doctor", values["doctor"]) if values["doctor"] != MISSING else "",
+        if values[item] == MISSING:
+            return reply("missing", L[item].format(doctor=name("doctor", values["doctor"]) if values["doctor"] != MISSING else "",
                                                  chemist=name("chemist", values["chemist"]) if values["chemist"] not in (MISSING, NONE) else ""),
-                             asked=key)
-    # 4. a sample or order without a number
+                             asked=item)
+    # 5. a sample or order without a number
     for pairs, line in ((samples, "qty_sample"), (orders, "qty_order")):
         for product, n in pairs:
             if n is None:
                 return reply("missing", L[line].format(product=name("product", product)), asked=line)
 
-    # 5. everything is there: the read-back, one sentence per part (see GROUPS), so a later
+    # 6. everything is there: the read-back, one sentence per part (see GROUPS), so a later
     # correction can be read back on its own
     join = lambda xs: L["and"].join(xs)
     parts = {"met": L["met"].format(doctor=name("doctor", values["doctor"]), area=name("area", values["area"]))}
@@ -332,5 +464,5 @@ def _next_line(session, company, rep, fields, lang) -> dict:
     if values["feedback"] not in (MISSING, NONE):
         parts["feedback"] = L["feedback"].format(feedback=values["feedback"])
     parts["promise"] = L["no_promise"] if values["promise"] == NONE else L["promised"].format(promise=values["promise"])
-    parts["next"] = L["next"].format(next_visit=values["next_visit"])
+    parts["next"] = L["no_next"] if values["next_visit"] == NONE else L["next"].format(next_visit=values["next_visit"])
     return reply("complete", " ".join([*parts.values(), L["ask"]]), parts)

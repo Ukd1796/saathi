@@ -7,6 +7,7 @@ import logging
 import time
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,7 +18,6 @@ from ..models import AgentTurn, Company, Doctor, Promise, Rep, ToolEvent
 from ..names import Resolver, parse_items, spoken
 from ..outbound import greeting, maybe_callback, maybe_resume, maybe_retry, rep_context
 from ..visit_check import FALLBACK, check_visit
-from ..agent_template import VISIT_FIELDS
 
 log = logging.getLogger("saathi.bolna")
 router = APIRouter(prefix="/bolna")
@@ -143,7 +143,8 @@ async def check_visit_tool(request: Request, company: str = "", authorization: s
     params = await _params(request)
     rep = _rep_for(session, comp, params)
     try:
-        result = check_visit(session, comp, rep, params)
+        # check_visit waits on the extraction model; off the event loop, so other calls aren't held up
+        result = await run_in_threadpool(check_visit, session, comp, rep, params)
     except Exception as exc:  # a crash here would leave the rep in silence: keep the call going, log the turn
         log.exception("check_visit failed for company %s: %s", comp.id, params)
         session.rollback()
@@ -156,7 +157,7 @@ async def check_visit_tool(request: Request, company: str = "", authorization: s
     _turn(session, comp, rep, "check_visit", params, started, status=result["status"], asked=result.get("asked"),
           say=result["say"] or None)
     session.commit()
-    log.info("check_visit %s -> %s: %s", {k: params.get(k) for k in VISIT_FIELDS}, result["status"], result["say"])
+    log.info("check_visit %r -> %s: %s", params.get("mr_said"), result["status"], result["say"])
     if result["status"] == "repeat":
         return {"status": "repeat", "message": "You already asked this. Say nothing and wait for the MR to answer."}
     return {"status": result["status"], "message": f'Say exactly this and nothing else: "{result["say"]}"'}

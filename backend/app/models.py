@@ -265,6 +265,9 @@ class VisitDraft(Base):
     read_back: Mapped[dict | None] = mapped_column(JSON)  # the visit as last read back: what a yes confirms
     mr_said: Mapped[str | None] = mapped_column(Text)  # the rep's words at the last tool call: a yes needs new ones
     disputes: Mapped[dict] = mapped_column(JSON, default=dict)  # item -> times the rep said it was wrong
+    pending: Mapped[dict | None] = mapped_column(JSON)  # the name question waiting for an answer: kind, heard, options
+    pinned: Mapped[dict | None] = mapped_column(JSON)  # "kind|heard" -> the name the rep confirmed in this call
+    said: Mapped[str | None] = mapped_column(Text)  # Saathi's last line, so it is never taken for the rep's words
     language: Mapped[str | None] = mapped_column(String(2))  # hi | en, from the rep's words (visit_check)
     confirmed: Mapped[bool] = mapped_column(default=False)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)

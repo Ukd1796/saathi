@@ -1,0 +1,97 @@
+{
+ "name": "Sahyadri Pharma",
+ "rep": {
+  "name": "Test Rep",
+  "area": "Kothrud; Hadapsar; Aundh"
+ },
+ "products": [
+  "Amlong 5",
+  "Augmentin 625",
+  "Azithral 500",
+  "Becosules",
+  "Cardivas",
+  "Dolo 650",
+  "Ecosprin 75",
+  "Glycomet GP1",
+  "Janumet",
+  "Limcee",
+  "Montair LC",
+  "Pan 40",
+  "Pan D",
+  "Rosuvas 10",
+  "Shelcal 500",
+  "Storvas 20",
+  "Telma 40",
+  "Telma H",
+  "Thyronorm 50",
+  "Zerodol SP"
+ ],
+ "doctors": [
+  [
+   "Dr Banerjee",
+   "Hadapsar"
+  ],
+  [
+   "Dr Deshpande",
+   "Aundh"
+  ],
+  [
+   "Dr Iyer",
+   "Shivaji Nagar"
+  ],
+  [
+   "Dr Joshi",
+   "Baner"
+  ],
+  [
+   "Dr Kulkarni",
+   "Baner"
+  ],
+  [
+   "Dr Mehta",
+   "Kothrud"
+  ],
+  [
+   "Dr Patil",
+   "Hadapsar"
+  ],
+  [
+   "Dr Qureshi",
+   "Wakad"
+  ],
+  [
+   "Dr Rao",
+   "Aundh"
+  ],
+  [
+   "Dr Saxena",
+   "Kothrud"
+  ]
+ ],
+ "chemists": [
+  [
+   "Gupta Medicos",
+   "Aundh"
+  ],
+  [
+   "Krishna Medical",
+   "Hadapsar"
+  ],
+  [
+   "Om Sai Medical",
+   "Baner"
+  ],
+  [
+   "Sharma Medical",
+   "Kothrud"
+  ],
+  [
+   "Shree Ganesh Medical",
+   "Shivaji Nagar"
+  ],
+  [
+   "Wellness Chemist",
+   "Wakad"
+  ]
+ ]
+}
