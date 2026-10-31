@@ -1,0 +1,148 @@
+{
+ "call": "d4aec100-763e-44f8-9a9b-c9ebcc59e309",
+ "script": "H2",
+ "truth": {
+  "doctor_name": "Dr Patil",
+  "area": "Hadapsar",
+  "products_discussed": [
+   "Azithral 500",
+   "Montair LC"
+  ],
+  "samples": [
+   [
+    "Montair LC",
+    3
+   ]
+  ],
+  "chemist_name": "Krishna Medical",
+  "orders": [
+   [
+    "Azithral 500",
+    45
+   ]
+  ],
+  "stock_outs": [
+   "Telma H"
+  ],
+  "promises": [
+   "patient leaflets next week"
+  ],
+  "next_visit": "wednesday"
+ },
+ "what_happened": "English. The voice model twice spoke on its own without calling check_visit: it refused the two-line monologue, and on the final yes it said 'यह report हो गया' and hung up, so nothing was saved and no callback was booked. 'next week' from the promise correction overwrote the next visit. 'patient leaflets' was garbled to 'patiently flex'.",
+ "rep_turns": [
+  {
+   "saathi": "नमस्ते Ujjwal! साथी बोल रही हूँ। Visit report देनी है, या किसी doctor की briefing चाहिए?",
+   "rep": "i want to provide a visit report",
+   "expect": {
+    "ask": [
+     "invite"
+    ]
+   }
+  },
+  {
+   "saathi": "ठीक है, बताइए।",
+   "rep": "i am in doctor पाटरण हदाबसर with dist monder lc and azithral five hundred i gave him three samples of montair lc i krishna medical i got an order of forty five azithral five hundred telma h is out of stock there the doctor said montair is good but a bit costly i promised him i promise to bring the patiently flexenath sweet next visit is on wednesday",
+   "expect": {
+    "visit": {
+     "products_discussed": [
+      "Azithral 500",
+      "Montair LC"
+     ],
+     "samples": [
+      [
+       "Montair LC",
+       3
+      ]
+     ],
+     "chemist_name": "Krishna Medical",
+     "orders": [
+      [
+       "Azithral 500",
+       45
+      ]
+     ],
+     "stock_outs": [
+      "Telma H"
+     ],
+     "next_visit": "wednesday"
+    },
+    "ask": [
+     "readback",
+     "pick:doctor"
+    ],
+    "note": "the monologue came in two lines; on the call the voice model refused it ('the text split into two lines') without calling check_visit; 'पाटरण हदाबसर' (Patil Hadapsar in Devanagari) may get 'Dr Deshpande or Dr Patil?'"
+   }
+  },
+  {
+   "saathi": "Sorry, I couldn’t process that because the text split into two lines. Please send the full visit report in one message.",
+   "rep": "yes so i just said i am a doctor patil in हदब sir with distrast montair lc and azithral 500 i gave him three samples of montair lc krishna medical i got an order of forty five azithral five hundred telma h is out of stock there the doctor said is montair is good but a bit costly i promise to when the patient leaves flat week next visit is on wednesday",
+   "expect": {
+    "visit": {
+     "doctor_name": "Dr Patil",
+     "area": "Hadapsar",
+     "products_discussed": [
+      "Azithral 500",
+      "Montair LC"
+     ],
+     "samples": [
+      [
+       "Montair LC",
+       3
+      ]
+     ],
+     "chemist_name": "Krishna Medical",
+     "orders": [
+      [
+       "Azithral 500",
+       45
+      ]
+     ],
+     "stock_outs": [
+      "Telma H"
+     ],
+     "next_visit": "wednesday"
+    },
+    "ask": [
+     "readback"
+    ]
+   }
+  },
+  {
+   "saathi": "You met Dr Patil in Hadapsar. You discussed Montair LC and Azithral five hundred. You gave three samples of Montair LC. At Krishna Medical you got an order of forty five Azithral five hundred. Telma H was out of stock there. The doctor said montair is good but a bit costly. You promised when the patient leaves flat week. The next visit is on wednesday. Is that right?",
+   "rep": "yeah promised to bring the patiently flex next week",
+   "expect": {
+    "visit": {
+     "next_visit": "wednesday",
+     "promises": [
+      "leaflets next week"
+     ]
+    },
+    "ask": [
+     "readback"
+    ],
+    "note": "'next week' inside the promise must not change the next visit (on the call it did)"
+   }
+  },
+  {
+   "saathi": "You promised to bring the patiently flex next week. The next visit is next week. Is that right?",
+   "rep": "yeah the next visit was on wednesday",
+   "expect": {
+    "visit": {
+     "next_visit": "wednesday"
+    }
+   }
+  },
+  {
+   "saathi": "The next visit is wednesday. Is that right?",
+   "rep": "yes",
+   "expect": {
+    "ask": [
+     "recorded"
+    ],
+    "note": "on the call the voice model said 'यह report हो गया' itself and hung up; the backend never heard this yes"
+   }
+  }
+ ],
+ "agent_calls": []
+}

@@ -294,6 +294,10 @@ def apply_patch(heard: dict, changes: list, same) -> tuple[dict, list]:
     for c in changes:
         f, op, name = PATCH_FIELD[c["item"]], c["op"], (c.get("name") or "").strip()
         before = h.get(f)
+        if name and not _grounded(name, c.get("quote", "")):
+            if f not in ("samples", "orders"):
+                continue  # a name the rep didn't say in these words is not applied
+            name = ""  # a sample or order whose product wasn't in the rep's words: asked, not guessed
         if op == "dispute":
             about.append(f)
             continue
@@ -333,6 +337,13 @@ def apply_patch(heard: dict, changes: list, same) -> tuple[dict, list]:
     return h, list(dict.fromkeys(about))
 
 
+def _grounded(name, quote) -> bool:
+    """The name is in the rep's own words: its letters appear in the quote. On 31 Oct "twenty का तीस
+    order" came back as a Telma 40 order, the product taken from another sentence."""
+    letters = re.sub(r"\d+", "", key(name, person=True))
+    return not letters or letters in key(quote)
+
+
 def _strength_as_quantity(name, qty, quote) -> bool:
     """The quantity is the product's own strength while the rep's words hold another number too:
     "strovas बीस का order तीस" read as Storvas 20 x 20 (31 Oct). Then the quantity isn't trusted."""
@@ -346,8 +357,8 @@ def _strength_as_quantity(name, qty, quote) -> bool:
 def _answer(pending, mr_said, yes) -> str | None:
     """The name the rep's reply settles a name question on: the offered name said back, or a yes
     when only one name was offered ("Kothrud था?" - "हां"). Otherwise the question stays open."""
-    said = key(mr_said)
-    named = [o for o in pending["options"] if key(o) and key(o) in said]
+    said, person = key(mr_said), pending["kind"] == "doctor"
+    named = [o for o in pending["options"] if key(o, person) and key(o, person) in said]  # "doctor patil" is Dr Patil
     if len(named) == 1:
         return named[0]
     return pending["options"][0] if yes and len(pending["options"]) == 1 else None

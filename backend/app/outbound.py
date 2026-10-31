@@ -231,14 +231,20 @@ def started(draft) -> bool:
         str(v or "").strip().lower() not in ("", "missing") for k, v in (draft.heard or {}).items() if k != "promise_material")
 
 
+# However the call ended, a report the rep started and never confirmed is not saved, so Saathi calls back.
+# Including when Saathi itself ended it: on 31 Oct the voice model said "report हो गया" on its own, without
+# check_visit, and hung up (d4aec100); and when the line went silent after a read-back Bolna never played
+# (ac4a0650, inactivity_timeout).
+CUT_OFF_ENDINGS = ("user_hung_up", "call-disconnected", "network_error", "max_duration_reached",
+                   "agent_ended_call", "inactivity_timeout", "silence")
+
+
 def cut_off(session, call: Call) -> bool:
-    """The rep was mid-report and the line dropped: they hung up (or the call hit its time limit)
-    before saying yes to the read-back, with part of the visit already told."""
+    """The call ended before the rep said yes to the read-back, with part of the visit already told."""
     if call.call_type == "briefing" or call.rep is None or call.visit is not None:
         return False
     raw = call.raw or {}
-    if (raw.get("termination_reason") or "") not in ("user_hung_up", "call-disconnected", "network_error",
-                                                     "max_duration_reached"):
+    if (raw.get("termination_reason") or "") not in CUT_OFF_ENDINGS:
         return False
     from .ingest import call_draft
     return started(call_draft(session, call))

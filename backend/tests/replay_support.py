@@ -79,7 +79,10 @@ def compare(field, got, want, names) -> bool:
     if field in SINGLE:
         if want is None:
             return not got
-        return bool(got) if field == "next_visit" else got == want  # next visit is free text
+        if field == "next_visit":  # free text: the same words, ignoring case, spaces and script of digits
+            from app.names import key
+            return bool(got) and (key(want) in key(got) or key(got) in key(want))
+        return got == want
     if field in PAIRS:
         got = [tuple(x) for x in (got or [])]
         for name, qty in want:

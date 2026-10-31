@@ -23,7 +23,7 @@ from collections import Counter
 
 from .agent_template import END_LINES, MAX_CALL_SECONDS
 from .models import AgentTurn, Call, VisitDraft
-from .outbound import NO_ANSWER
+from .outbound import NO_ANSWER, started
 from .visit_check import LINES
 
 log = logging.getLogger("saathi.health")
@@ -104,6 +104,11 @@ def diagnose(call: Call, draft: VisitDraft | None, turns: list[AgentTurn]) -> di
     confirmed = draft is not None and draft.confirmed
     if not confirmed and any(_said(saathi, L["recorded"]) for L in LINES.values()):
         return fail("false_close", "Saathi said the report was recorded, but no read-back was confirmed")
+    # Saathi hung up on a report the rep had started and never confirmed: whatever its last words, the
+    # rep was let go believing it was done (31 Oct: "यह report हो गया", made up by the voice model).
+    if (call.raw or {}).get("termination_reason") == "agent_ended_call" and started(draft) \
+            and call.call_type != "briefing":
+        return fail("false_close", "Saathi ended the call, but the rep never confirmed the read-back")
     errors = [t for t in turns if t.status == "error"]
     if errors:
         return fail("tool_error", f"{errors[-1].tool} failed: {errors[-1].error}")

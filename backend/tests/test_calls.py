@@ -193,3 +193,16 @@ def test_debrief_the_rep_did_not_confirm_is_not_saved(client, company):
     assert "not saved" in webhook(client, company, p).json()["note"]
     with client.Session() as s:
         assert s.query(Visit).count() == 0 and s.query(ScheduledCall).count() == 0  # and no resume call
+
+
+def test_saathi_hanging_up_on_an_unconfirmed_report_calls_back_and_is_a_false_close(client, company):
+    """31 Oct (d4aec100): the voice model said "यह report हो गया" on its own, never calling check_visit,
+    and hung up. Nothing was saved and no callback was booked. Now Saathi calls back, and Call health
+    says false_close."""
+    p = dropped_call(client, company, "false-close-1", heard={"doctor": "Dr Patil", "area": "Hadapsar"})
+    p["termination_reason"] = "agent_ended_call"
+    webhook(client, company, p, confirmed=False)
+    with client.Session() as s:
+        from app.models import Call
+        assert s.query(ScheduledCall).one().purpose == "resume"
+        assert s.get(Call, "false-close-1").failure_stage == "false_close"

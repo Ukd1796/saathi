@@ -2,6 +2,7 @@
 
     uv run python -m evals.replay            # the recorded agent calls (current baseline)
     uv run python -m evals.replay --extract  # step 2: the backend reads each rep reply (needs OPENAI_API_KEY)
+    uv run python -m evals.replay --extract --only 58a48d70,d4aec100  # just these replays (saves credits)
 
 For every replay in tests/replays, the recorded agent calls are run through check_visit and the
 draft they leave is compared, field by field, with what Saathi should know by the end of the call
@@ -38,7 +39,10 @@ def extract_mode():
     print(f"model {extract.MODEL}, reasoning {extract.REASONING}\n")
     total = right = asks = asks_ok = 0
     times = []
+    only = sys.argv[sys.argv.index("--only") + 1].split(",") if "--only" in sys.argv else None
     for path in replay_files():
+        if only and not any(o in path.stem for o in only):
+            continue
         call = load(path)
         with tempfile.TemporaryDirectory() as tmp, session_for(tmp) as s:
             company, rep, data = load_company(s)

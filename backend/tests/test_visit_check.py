@@ -311,3 +311,17 @@ def test_hindi_number_words_count_as_numbers_in_names():
     from app.names import to_latin
     assert to_latin("strovas बीस का order तीस") == "strovas 20 ka order 30"
     assert to_latin("दोस्त एकदम") == "dost ekadam"  # only whole words
+
+
+def test_a_product_not_in_the_reps_words_is_asked_not_saved(client, company, monkeypatch):
+    """Replay 58a48d70: "twenty का तीस order" came back as a Telma 40 order, the product taken from
+    another sentence. A sample or order whose product isn't in its quote counts as unnamed."""
+    patch = [c if c["item"] != "order" else change("order", name="Pan D", quantity=30, quote="twenty ka order tees")
+             for c in MONOLOGUE_PATCH]
+    r = reply(client, company, monkeypatch, MONOLOGUE, patch)
+    assert r["asked"] == "which_order"
+
+
+def test_saying_the_doctor_with_a_title_settles_a_doctor_question(client, company):
+    from app.visit_check import _answer
+    assert _answer({"kind": "doctor", "heard": "x", "options": ["Dr Rao", "Dr Patil"]}, "i met doctor patil", False) == "Dr Patil"

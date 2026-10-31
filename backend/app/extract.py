@@ -38,13 +38,13 @@ Items:
 - stock_out: a product out of stock at that chemist (op add, remove or none).
 - feedback: what the doctor said about the products, one short sentence in the MR's language.
 - promise: what the MR promised the doctor, with any timing, in the MR's language; material is true if it is handing over something (a study, leaflet, chart, samples).
-- next_visit: only when the next visit is, as the MR said it, in their language ("दो हफ़्ते बाद", "next Tuesday"), without words like "next visit" or "है".
+- next_visit: only when the MR talks about the next visit; a time inside a promise ("bring the study next week") stays with the promise. Only when the next visit is, as the MR said it, in their language ("दो हफ़्ते बाद", "next Tuesday"), without words like "next visit" or "है".
 
 Ops: set gives a single item its value, or a sample/order its product and quantity (it replaces the same product's earlier quantity). add and remove change a list. none means the MR said there was none. dispute means the MR says an item is wrong without giving the new value.
 
 Rules:
 - Only what this reply says. Never restate items from the visit so far that the reply doesn't change.
-- quote: the MR's exact words this change comes from, copied unchanged from the reply.
+- quote: the MR's exact words this change comes from, copied unchanged from the reply, including the name it is about.
 - Write names as heard, in Latin letters, keeping the strength ("telma forty", "sharma medical"). Never swap in a different name.
 - A number right after a product name is its strength and part of the name, in English or Hindi words ("<product> forty", "<product> बीस"). The quantity is the number that goes with the sample or order: "<product> बीस का order तीस" is name "<product> बीस", quantity 30. One number never counts as both.
 - A number alone ("twenty") is not a product. If the product of a sample or order wasn't named, name is null.

@@ -181,7 +181,8 @@ MODEL = "gpt-5.4-mini"
 STOP = "The MR wants to stop or call back later"
 # The call ends on Saathi's own closing line, which check_visit gives only after a yes to its read-back.
 HANGUP_PROMPT = """End the call only in one of these cases:
-1. Saathi's last line said the report is recorded ("record हो गया" / "it's recorded").
+1. Saathi's last line contains exactly "record हो गया" or "it's recorded". Anything else, such as
+   "report हो गया", "done" or "noted", does not count.
 2. Saathi gave a briefing and the MR has nothing else.
 Never end the call because of anything the MR said; the conversation handles that."""
 
