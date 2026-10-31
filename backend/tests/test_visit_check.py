@@ -155,3 +155,144 @@ def test_a_missing_area_comes_from_the_doctors_record(client, company):
     although the doctor's area is on file."""
     r = run(client, company, doctor="daughter qureshi", area="missing")
     assert r["status"] == "complete" and r["say"].startswith("Dr Qureshi, Wakad में मिले थे।")
+
+
+def test_a_none_for_items_the_reply_was_not_about_wipes_nothing(client, company):
+    """31 Oct: after the read-back the rep added only the next visit; the agent sent "none" for every
+    other item, which wiped the doctor and crashed the check. Only the item the reply was about changes."""
+    read_back(client, company)
+    nones = {k: "none" for k in FULL if k not in ("language", "next_visit")}
+    r = turn(client, company, **nones, next_visit="दो हफ़्ते बाद", about="next_visit",
+             mr_said="अगली visit दो हफ़्ते बाद है")
+    assert r["status"] == "complete" and r["say"] == "अगली visit दो हफ़्ते बाद। सही है?"
+    assert r["visit"]["doctor_name"] == "Dr Qureshi" and r["visit"]["chemist_name"] == "Wellness Chemist"
+
+
+def test_a_none_the_reply_was_about_still_clears(client, company):
+    read_back(client, company)
+    r = turn(client, company, stock_outs="none", about="stock_outs", mr_said="नहीं कोई stock issue नहीं था")
+    assert r["visit"]["stock_outs"] == [] and "कोई stock issue नहीं था।" in r["say"]
+
+
+def test_a_doctor_sent_as_none_is_asked_not_a_crash(client, company):
+    r = run(client, company, doctor="none")
+    assert (r["status"], r["say"]) == ("missing", "किस doctor से मिले?")
+
+
+def test_no_next_visit_is_said_in_words_not_none(client, company):
+    r = run(client, company, next_visit="none")
+    assert r["status"] == "complete" and "अगली visit अभी तय नहीं है।" in r["say"] and "none" not in r["say"]
+
+
+def test_a_yes_to_a_name_question_settles_it_even_if_the_agent_resends_the_garble(client, company):
+    """31 Oct: "Kothrud था?" - "हां", but the agent kept sending the garbled area, so Saathi asked again
+    until the rep hung up. The backend remembers what it asked; the yes settles it."""
+    r = turn(client, company, stock_outs="seventy five", mr_said="Ecosprin seventy five का stock नहीं था")
+    assert r["say"] == "Ecosprin seventy five था?"
+    r = turn(client, company, stock_outs="seventy five", mr_said="हां", confirms_readback="yes")
+    assert r["status"] == "complete" and "Ecosprin seventy five का stock ख़त्म था" in r["say"]
+
+
+def test_the_offered_name_said_back_settles_it(client, company):
+    turn(client, company, stock_outs="seventy five", mr_said="seventy five ka stock nahi tha")
+    r = turn(client, company, stock_outs="seventy five", mr_said="Ecosprin 75 tha")
+    assert r["status"] == "complete"
+
+
+def test_a_no_leaves_the_name_question_open(client, company):
+    turn(client, company, stock_outs="seventy five", mr_said="seventy five ka stock nahi tha")
+    r = turn(client, company, stock_outs="seventy five", mr_said="नहीं वो नहीं था", confirms_readback="no")
+    assert r["say"] == "Ecosprin seventy five था?"
+
+
+def test_saathis_own_line_or_nothing_new_is_not_a_reply(client, company):
+    """31 Oct: the agent called again with no rep words, and once with Saathi's own question as them."""
+    r = turn(client, company, stock_outs="seventy five", mr_said="seventy five ka stock nahi tha")
+    assert turn(client, company, stock_outs="seventy five", mr_said=r["say"])["status"] == "repeat"
+    assert turn(client, company, stock_outs="seventy five", mr_said="")["status"] == "repeat"
+
+
+# ---- step 2: the agent sends only the rep's words; the backend reads them (extract.py) -------------
+
+def change(item, op="set", name=None, quantity=None, text=None, quote="", material=None):
+    return {"item": item, "op": op, "name": name, "quantity": quantity, "text": text, "material": material,
+            "quote": quote}
+
+
+def reply(client, company, monkeypatch, mr_said, changes, answer="info"):
+    """One rep reply, with the model's patch given by the test."""
+    from app import extract
+    monkeypatch.setattr(extract, "extract", lambda heard, saathi, said: {
+        "reply": answer, "changes": [c for c in changes if c["quote"] in said], "dropped": []})
+    with client.Session() as s:
+        r = check_visit(s, company, None, {"call_sid": "sid-2", "mr_said": mr_said})
+        s.commit()
+        return r
+
+
+MONOLOGUE = ("Dr Qureshi se mila Wakad mein, Pan D discuss kiya, Pan D ke chhe sample, Wellness Chemist pe "
+             "twenty ka order tees, koi stock issue nahi, koi promise nahi, next visit das din baad")
+MONOLOGUE_PATCH = [
+    change("doctor", name="Dr Qureshi", quote="Dr Qureshi"), change("area", name="Wakad", quote="Wakad"),
+    change("product", "add", name="Pan D", quote="Pan D discuss kiya"),
+    change("sample", name="Pan D", quantity=6, quote="Pan D ke chhe sample"),
+    change("chemist", name="Wellness Chemist", quote="Wellness Chemist"),
+    change("order", name=None, quantity=30, quote="twenty ka order tees"),
+    change("stock_out", "none", quote="koi stock issue nahi"), change("promise", "none", quote="koi promise nahi"),
+    change("next_visit", text="das din baad", quote="next visit das din baad")]
+
+
+def test_an_order_without_a_product_is_asked_never_guessed(client, company, monkeypatch):
+    """31 Oct: "twenty का order तीस" was saved as a Telma 40 order. The product is asked for."""
+    r = reply(client, company, monkeypatch, MONOLOGUE, MONOLOGUE_PATCH)
+    assert (r["asked"], r["say"]) == ("which_order", "Which product was the order of thirty for?")
+    r = reply(client, company, monkeypatch, "Amlong 5 ka", [change("order", name="Amlong 5", quantity=None, quote="Amlong 5")])
+    assert r["status"] == "complete" and "an order of thirty Amlong five" in r["say"]
+    assert r["visit"]["orders"] == [("Amlong 5", 30)]
+
+
+def test_a_reply_changes_only_what_it_mentions(client, company, monkeypatch):
+    """31 Oct: a correction to the order replaced the products discussed and dropped the samples."""
+    reply(client, company, monkeypatch, MONOLOGUE, MONOLOGUE_PATCH)
+    reply(client, company, monkeypatch, "Amlong 5 ka", [change("order", name="Amlong 5", quote="Amlong 5")])
+    r = reply(client, company, monkeypatch, "order Amlong 5 ka chalees tha",
+              [change("order", name="Amlong 5", quantity=40, quote="Amlong 5 ka chalees")])
+    assert r["say"] == "At Wellness Chemist you got an order of forty Amlong five. Is that right?"
+    assert r["visit"]["products_discussed"] == ["Pan D"] and r["visit"]["samples"] == [("Pan D", 6)]
+
+
+def test_restating_what_was_read_back_is_a_yes_not_a_dispute(client, company, monkeypatch):
+    """31 Oct: the rep repeated the corrected order, it counted as a dispute and got flagged."""
+    reply(client, company, monkeypatch, MONOLOGUE, MONOLOGUE_PATCH)
+    reply(client, company, monkeypatch, "Amlong 5 ka", [change("order", name="Amlong 5", quote="Amlong 5")])
+    r = reply(client, company, monkeypatch, "haan Wellness Chemist pe Amlong 5 ka order tees",
+              [change("order", name="Amlong 5", quantity=30, quote="Amlong 5 ka order tees")], answer="yes")
+    assert r["status"] == "recorded"
+
+
+def test_a_change_without_the_reps_words_behind_it_is_not_applied(client, company, monkeypatch):
+    from app import extract
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
+    content = {"reply": "info", "changes": [change("doctor", name="Dr Qureshi", quote="Dr Qureshi"),
+                                            change("sample", name="Pan D", quantity=1, quote="one strip")]}
+
+    class Response:
+        status_code = 200
+        def json(self):
+            import json
+            return {"choices": [{"message": {"content": json.dumps(content)}}]}
+
+    monkeypatch.setattr(extract.httpx, "post", lambda *a, **k: Response())
+    patch = extract.extract({}, "", "Dr Qureshi se mila, Pan D ka sample diya")
+    assert [c["item"] for c in patch["changes"]] == ["doctor"] and patch["dropped"][0]["quote"] == "one strip"
+
+
+def test_naming_the_product_fills_the_unnamed_order_even_if_the_quantity_was_misread(client, company, monkeypatch):
+    """Replay 66441c37: "twenty का order तीस" was read as an order of 20; "Storvas twenty का order
+    तीस" then added a second order instead of naming the first, and the question came back."""
+    patch = [c if c["item"] != "order" else change("order", name=None, quantity=20, quote="twenty ka order tees")
+             for c in MONOLOGUE_PATCH]
+    reply(client, company, monkeypatch, MONOLOGUE, patch)
+    r = reply(client, company, monkeypatch, "Amlong 5 ka order tees",
+              [change("order", name="Amlong 5", quantity=30, quote="Amlong 5 ka order tees")])
+    assert r["visit"]["orders"] == [("Amlong 5", 30)] and r["status"] == "complete"

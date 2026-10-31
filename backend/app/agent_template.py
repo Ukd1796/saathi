@@ -169,21 +169,9 @@ def doctor_brief_tool(company):
 
 # ---- the call graph ------------------------------------------------------------------------------
 # The call split into nodes, one job each (Bolna graph agents). The debrief has one tool,
-# check_visit: the agent sends everything heard so far, the backend resolves the names and returns the
-# one line to say next (a question, or the whole read-back). It keeps the visit as a draft per call;
-# the draft the rep said yes to is what ingest saves, so the visit has the names checked on the call.
-VISIT_FIELDS = {
-    "doctor": "The doctor the MR met, as they said it, even if it sounds garbled",
-    "area": "The area of the visit",
-    "products": "Products discussed with the doctor, separated by semicolons, with strength",
-    "samples": 'Samples given, "<product>: <number in digits>" separated by semicolons; "<product>: ?" if they gave no number',
-    "chemist": "The chemist near the doctor the MR visited",
-    "orders": 'Orders at the chemist, "<product>: <number in digits>" separated by semicolons',
-    "stock_outs": "Product names out of stock at that chemist, separated by semicolons, no quantities",
-    "feedback": "What the doctor said about the products, naming the product, in the MR's language",
-    "promise": "What the MR promised the doctor, with any timing, in the MR's language",
-    "next_visit": "When the next visit is, in the MR's language",
-}
+# check_visit: the agent passes on the rep's words, the backend reads the visit from them, resolves the
+# names and returns the one line to say next (a question, or the read-back). It keeps the visit as a
+# draft per call; the draft the rep said yes to is what ingest saves.
 TOOL_SCOPES = {"check_visit": ["visit"], "get_doctor_brief": ["briefing"]}
 # Reps pause mid-list ("Pan D aur... Amlong"); at 900 ms the turn ended inside the sentence (graph G1).
 ENDPOINTING_MS = 1200
@@ -199,22 +187,17 @@ Never end the call because of anything the MR said; the conversation handles tha
 
 
 def check_visit_tool(company):
-    fields = {k: f'{d}. Only what the MR said in this call; the latest value if they corrected it; "none" if they '
-                 f'said there was none; "missing" if not said yet.' for k, d in VISIT_FIELDS.items()}
-    fields["language"] = 'The language of the MR\'s latest turn: "en" for English, "hi" for Hindi or Hinglish'
-    fields["confirms_readback"] = ('"yes" only if the MR\'s latest reply is a plain yes to Saathi\'s last line, with '
-                                   'no correction, "but", new detail or question; otherwise "no"')
-    fields["promise_material"] = ('"yes" if the promise is to give the doctor material (a study, leaflet, chart, '
-                                  'literature, samples); otherwise "no"')
-    fields["mr_said"] = ("The MR's words since Saathi's last line, copied exactly from the transcript; empty if the "
-                         "MR has said nothing since")
-    fields["about"] = ("Which visit items the MR's latest reply corrects, adds to or says is wrong, comma-separated, "
-                       "from: " + ", ".join(VISIT_FIELDS) + '; "none" if it is only a yes or no')
-    fields["interrupted"] = '"yes" if the MR cut Saathi off in the middle of its last line; otherwise "no"'
+    """The agent only passes the rep's words on; the backend reads the visit from them (extract.py). On
+    30-31 Oct the agent filling in the visit itself dropped items, wiped them with "none" and guessed."""
+    fields = {"mr_said": ("The MR's words since Saathi's last line, copied exactly from the transcript; empty if the "
+                          "MR has said nothing since"),
+              "resume_notes": "The earlier notes, only on the first call of a resume call where the MR confirmed "
+                              "them; otherwise empty"}
     tool, params = _tool("check_visit",
-                         "Send everything the MR has said about this visit so far. Returns the one line Saathi says "
-                         "next: a single question, the full read-back, or the closing line. Call it again after "
-                         "every reply from the MR.", fields, "/bolna/tools/check_visit", company)
+                         "Send the MR's latest words. Returns the one line Saathi says next: a single question, "
+                         "the read-back, or the closing line. Call it after every reply from the MR.",
+                         fields, "/bolna/tools/check_visit", company)
+    tool["parameters"]["required"] = ["mr_said"]
     params["param"]["call_sid"] = "%(call_sid)s"  # filled in by Bolna; keeps one draft per call
     return tool, params
 
@@ -243,33 +226,26 @@ def graph_nodes(company: Company, names: dict) -> list[dict]:
                                   {"variable": "recipient_data.mode", "operator": "eq", "value": value}]}}
     return [
         {"id": "route", "node_type": "router", "description": "Start where the reason for this call says",
-         "edges": [mode("resume", "resume"), mode("briefing", "briefing"), mode("sweep", "listen"),
+         "edges": [mode("resume", "resume"), mode("briefing", "briefing"), mode("sweep", "visit"),
                    {"to_node_id": "opening", "condition_type": "unconditional"}]},
         {"id": "opening", "prompt": prompt("opening"), "edges": [
-            _edge("listen", "The MR wants to report a visit, or has started describing one"),
+            _edge("visit", "The MR wants to report a visit, or has started describing one"),
             _edge("briefing", "The MR wants a briefing about a doctor they are about to meet"),
-            _edge("confirm_stop", "The MR's reply sounds like they don't want to report or be briefed now"),
+            # Only a clear "not now" ends the call; an unclear or short reply stays here and gets re-asked.
+            _edge("later", "The MR clearly says not now: busy, will call back later, or doesn't want anything"),
             _edge("wrong_number", "The caller is not a medical rep (wrong number)")]},
-        {"id": "confirm_stop", "prompt": prompt("confirm_stop"), "edges": [
-            _edge("listen", "The MR does want to report a visit"),
-            _edge("briefing", "The MR wants a briefing"),
-            _edge("later", "The MR confirms they don't want anything now")]},
-        # After the rep's message the check always runs (a rule, not the router's judgement: on 30 Oct
-        # the router kept the call here and the agent claimed "record हो गया" with no check). It is
-        # unconditional because a `_node_turns >= 1` rule is checked before the current message is
-        # counted, so it fired one message late. A half-told visit just gets the next missing item asked;
-        # stopping is handled in `visit`.
-        {"id": "listen", "prompt": prompt("listen"), "edges": [
-            {"to_node_id": "visit", "condition_type": "unconditional", "priority": 1}]},
+        # A report goes straight to the check; with nothing said yet, check_visit returns the invite. There
+        # used to be a `listen` node in between: the rep's whole monologue arrived as the call entered it,
+        # so `listen` answered with its own read-back and the check only ran a turn later (31 Oct).
         {"id": "visit", "prompt": prompt("visit"), "function_call": "check_visit", "edges": [
             _edge("visit", "The MR replied to Saathi: answered, confirmed, corrected or added something"),
             _edge("later", STOP)]},
         {"id": "briefing", "prompt": prompt("briefing"), "edges": [
-            _edge("listen", "The MR now wants to report a visit"),
+            _edge("visit", "The MR now wants to report a visit"),
             _edge("bye", "The MR has nothing else")]},
         {"id": "resume", "prompt": prompt("resume"), "edges": [
             _edge("visit", "The MR confirmed the earlier notes and told the rest"),
-            _edge("listen", "The MR says the notes are wrong or wants to report a different visit"),
+            _edge("visit", "The MR says the notes are wrong or wants to report a different visit"),
             _edge("later", STOP)]},
         *(_end(node_id, hi, en) for node_id, (hi, en) in END_LINES.items()),
     ]

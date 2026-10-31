@@ -63,7 +63,7 @@ def test_onboarding_creates_a_graph_agent(client, company, monkeypatch):
     assert client.post("/api/agent/create").json() == {"agent_id": "a-1"}
     assert task(sent[0])["tools_config"]["llm_agent"]["agent_type"] == "graph_agent"
     status = client.get("/api/agent").json()
-    assert {n["id"] for n in status["nodes"]} >= {"route", "opening", "listen", "visit", "briefing"}
+    assert {n["id"] for n in status["nodes"]} >= {"route", "opening", "visit", "briefing"}
     assert next(n for n in status["nodes"] if n["id"] == "visit")["tool"] == "check_visit"
 
 
@@ -81,12 +81,13 @@ def test_graph_prompts_name_no_company_records(client, company):
     assert "[[" not in text
 
 
-def test_the_check_always_runs_after_the_reps_first_message(client, company):
-    """Listening hands over by rule, not by the router's judgement (which once kept the call in listen)."""
+def test_a_report_goes_straight_to_the_check(client, company):
+    """No node between the opening and check_visit that could answer the rep's monologue itself."""
     graph, _ = configs(client, company)
     nodes = {n["id"]: n for n in task(graph)["tools_config"]["llm_agent"]["llm_config"]["nodes"]}
-    (edge,) = nodes["listen"]["edges"]
-    assert edge["to_node_id"] == "visit" and edge["condition_type"] == "unconditional"
+    assert "listen" not in nodes
+    for node in ("opening", "briefing", "resume"):
+        assert "visit" in {e["to_node_id"] for e in nodes[node]["edges"]}
 
 
 def test_graph_model_is_one_setting_for_conversation_and_routing(client, company):

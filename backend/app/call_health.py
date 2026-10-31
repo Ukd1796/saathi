@@ -8,7 +8,7 @@ transcript, matched against the lines the backend gave it (never against the rep
 
 Stages, in the order a call goes through them:
   connect     the call never got going (no answer, error, or the rep said nothing)
-  routing     the rep spoke but no tool ever ran: the call stayed in opening / listen
+  routing     the rep spoke but no tool ever ran: the call stayed in opening
   collecting  check_visit ran but the visit never got as far as the read-back
   confirming  the read-back was said but the rep never said yes to it
   briefing    a briefing was asked for but no doctor was found

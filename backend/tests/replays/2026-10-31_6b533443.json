@@ -1,0 +1,136 @@
+{
+ "call": "6b533443-6976-4a6e-b2de-90a4f346b1f1",
+ "script": "M4",
+ "truth": {
+  "doctor_name": "Dr Mehta",
+  "area": "Kothrud",
+  "products_discussed": [
+   "Pan D",
+   "Telma 40"
+  ],
+  "samples": [
+   [
+    "Telma 40",
+    4
+   ]
+  ],
+  "chemist_name": "Sharma Medical",
+  "orders": [
+   [
+    "Storvas 20",
+    30
+   ]
+  ],
+  "stock_outs": [],
+  "promises": [],
+  "next_visit": "दो हफ़्ते बाद"
+ },
+ "what_happened": "Saved as recorded, but with the order flagged for the manager. The agent guessed Telma 40 for the order product ('twenty के तीस order'); after the rep corrected it to Storvas 20, the rep's restated correction was counted as a dispute twice and flagged. Agent calls were not kept (the call was deleted before replays existed).",
+ "rep_turns": [
+  {
+   "saathi": "नमस्ते Ujjwal! साथी बोल रही हूँ। Visit report देनी है, या किसी doctor की briefing चाहिए?",
+   "rep": "visit report देनी है",
+   "expect": {
+    "ask": [
+     "invite"
+    ]
+   }
+  },
+  {
+   "saathi": "ठीक है, बताइए।",
+   "rep": "doctor मेहता सेमिला कोथर में pan d और telma forty",
+   "expect": {
+    "visit": {
+     "doctor_name": "Dr Mehta",
+     "area": "Kothrud",
+     "products_discussed": [
+      "Pan D",
+      "Telma 40"
+     ]
+    }
+   }
+  },
+  {
+   "saathi": "ठीक है, बताइए।",
+   "rep": "telma forty के चार sample दिए उसके बाद sharma medical पर twenty के तीस order मिले कोई stock issue नहीं है कोई promise भी नहीं हुआ है next visit दो हफ़्ते बाद है",
+   "expect": {
+    "visit": {
+     "samples": [
+      [
+       "Telma 40",
+       4
+      ]
+     ],
+     "chemist_name": "Sharma Medical",
+     "orders": [
+      [
+       null,
+       30
+      ]
+     ],
+     "stock_outs": [],
+     "promises": [],
+     "next_visit": "दो हफ़्ते बाद"
+    },
+    "ask": [
+     "order_product"
+    ],
+    "note": "'twenty' alone is not a product: ask which one, never guess"
+   }
+  },
+  {
+   "saathi": "ठीक है, और कुछ जोड़ना है?",
+   "rep": "नहीं इतना ही काफ़ी है",
+   "expect": {
+    "visit": {}
+   }
+  },
+  {
+   "saathi": "Dr Mehta, Kothrud में मिले थे। Pan D और Telma forty discuss हुए। Telma forty के चार sample दिए। Sharma Medical में Telma forty का order तीस मिला। कोई stock issue नहीं था। कोई promise नहीं था। अगली visit दो हफ़्ते बाद। सही है?",
+   "rep": "storvas twenty का sharma medical में order तीस वाला",
+   "expect": {
+    "visit": {
+     "orders": [
+      [
+       "Storvas 20",
+       30
+      ]
+     ],
+     "samples": [
+      [
+       "Telma 40",
+       4
+      ]
+     ],
+     "products_discussed": [
+      "Pan D",
+      "Telma 40"
+     ]
+    },
+    "ask": [
+     "readback_part"
+    ]
+   }
+  },
+  {
+   "saathi": "Sharma Medical में Storvas twenty का order तीस मिला। सही है?",
+   "rep": "sharma medical में storvas twenty का order तीस मिला",
+   "expect": {
+    "visit": {
+     "orders": [
+      [
+       "Storvas 20",
+       30
+      ]
+     ]
+    },
+    "ask": [
+     "confirm_readback",
+     "recorded"
+    ],
+    "note": "restating the value just read back agrees with it; it is not a dispute"
+   }
+  }
+ ],
+ "agent_calls": []
+}

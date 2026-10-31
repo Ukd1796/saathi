@@ -1,0 +1,329 @@
+{
+ "call": "808b95d0-1df7-4dfc-8ff0-44a669d9911d",
+ "script": "M4",
+ "truth": {
+  "doctor_name": "Dr Mehta",
+  "area": "Kothrud",
+  "products_discussed": [
+   "Pan D",
+   "Telma 40"
+  ],
+  "samples": [
+   [
+    "Telma 40",
+    4
+   ]
+  ],
+  "chemist_name": "Sharma Medical",
+  "orders": [
+   [
+    "Storvas 20",
+    30
+   ]
+  ],
+  "stock_outs": [],
+  "promises": [],
+  "next_visit": "दो हफ़्ते बाद"
+ },
+ "what_happened": "STT heard 'Dr Mehta से मिला Kothrud' as 'dot mehta samera road road'. Saathi asked 'Kothrud था?', the rep said yes, but the agent kept sending the garbled area, so Saathi asked again until the rep hung up. The agent also made up a sample quantity (1), guessed the order product, sent chemist 'none' though none was named, and put the product list in feedback.",
+ "rep_turns": [
+  {
+   "saathi": "नमस्ते Ujjwal! साथी बोल रही हूँ। Visit report देनी है, या किसी doctor की briefing चाहिए?",
+   "rep": "visit report देनी है",
+   "expect": {
+    "ask": [
+     "invite"
+    ]
+   }
+  },
+  {
+   "saathi": "ठीक है, visit report बताइए।",
+   "rep": "dot mehta samera road road में pan d और telma forty eight discuss किया telma forty sample भी गया उसका वहां पर twenty का तीस order मिला कोई stock issue नहीं था कोई promise नहीं है अगली visit दो हफ़्ते बाद",
+   "expect": {
+    "visit": {
+     "doctor_name": "Dr Mehta",
+     "products_discussed": [
+      "Pan D",
+      "Telma 40"
+     ],
+     "samples": [
+      [
+       "Telma 40",
+       null
+      ]
+     ],
+     "chemist_name": null,
+     "orders": [
+      [
+       null,
+       30
+      ]
+     ],
+     "stock_outs": [],
+     "promises": [],
+     "next_visit": "दो हफ़्ते बाद"
+    },
+    "ask": [
+     "confirm:area",
+     "qty_sample",
+     "order_product",
+     "chemist"
+    ],
+    "note": "no sample number and no order product were said, and no chemist was named: ask, never fill in"
+   }
+  },
+  {
+   "saathi": "Kothrud था?",
+   "rep": "हां",
+   "expect": {
+    "visit": {
+     "area": "Kothrud"
+    },
+    "ask_not": [
+     "confirm:area"
+    ]
+   }
+  }
+ ],
+ "agent_calls": [
+  {
+   "at": "2026-10-31T09:05:51.723234",
+   "status": "unclear",
+   "say": "Kothrud था?",
+   "error": null,
+   "params": {
+    "area": "Samera Road road",
+    "about": "doctor,area,products,samples,orders,stock_outs,promise,next_visit",
+    "doctor": "dot mehta",
+    "orders": "Telma forty eight: 30",
+    "chemist": "none",
+    "mr_said": "dot mehta samera road road में pan d और telma forty eight discuss किया telma forty sample भी गया उसका वहां पर twenty का तीस order मिला कोई stock issue नहीं था कोई promise नहीं है अगली visit दो हफ़्ते बाद",
+    "promise": "none",
+    "samples": "Telma forty eight: 1",
+    "feedback": "Pan D; Telma forty eight",
+    "language": "hi",
+    "products": "Pan D; Telma forty eight",
+    "next_visit": "दो हफ़्ते बाद",
+    "stock_outs": "none",
+    "interrupted": "no",
+    "promise_material": "no",
+    "confirms_readback": "no"
+   },
+   "expect": {}
+  },
+  {
+   "at": "2026-10-31T09:05:54.114956",
+   "status": "repeat",
+   "say": null,
+   "error": null,
+   "params": {
+    "area": "Samera Road road",
+    "about": "doctor,area,products,samples,orders,stock_outs,promise,next_visit",
+    "doctor": "dot mehta",
+    "orders": "Telma forty eight: 30",
+    "chemist": "none",
+    "mr_said": "dot mehta samera road road में pan d और telma forty eight discuss किया telma forty sample भी गया उसका वहां पर twenty का तीस order मिला कोई stock issue नहीं था कोई promise नहीं है अगली visit दो हफ़्ते बाद",
+    "promise": "none",
+    "samples": "Telma forty eight: 1",
+    "feedback": "Pan D; Telma forty eight",
+    "language": "hi",
+    "products": "Pan D; Telma forty eight",
+    "next_visit": "दो हफ़्ते बाद",
+    "stock_outs": "none",
+    "interrupted": "no",
+    "promise_material": "no",
+    "confirms_readback": "no"
+   },
+   "expect": {}
+  },
+  {
+   "at": "2026-10-31T09:05:57.434897",
+   "status": "repeat",
+   "say": null,
+   "error": null,
+   "params": {
+    "area": "Samera Road road",
+    "about": "doctor,area,products,samples,orders,stock_outs,promise,next_visit",
+    "doctor": "dot mehta",
+    "orders": "Telma forty eight: 30",
+    "chemist": "none",
+    "mr_said": "",
+    "promise": "none",
+    "samples": "Telma forty eight: 1",
+    "feedback": "Pan D; Telma forty eight",
+    "language": "hi",
+    "products": "Pan D; Telma forty eight",
+    "next_visit": "दो हफ़्ते बाद",
+    "stock_outs": "none",
+    "interrupted": "no",
+    "promise_material": "no",
+    "confirms_readback": "no"
+   },
+   "expect": {
+    "status": "repeat"
+   }
+  },
+  {
+   "at": "2026-10-31T09:06:09.434469",
+   "status": "unclear",
+   "say": "Kothrud था?",
+   "error": null,
+   "params": {
+    "area": "Samera Road road",
+    "about": "doctor,area,products,samples,orders,stock_outs,promise,next_visit",
+    "doctor": "dot mehta",
+    "orders": "Telma forty eight: 30",
+    "chemist": "none",
+    "mr_said": "",
+    "promise": "none",
+    "samples": "Telma forty eight: 1",
+    "feedback": "Pan D; Telma forty eight",
+    "language": "hi",
+    "products": "Pan D; Telma forty eight",
+    "next_visit": "दो हफ़्ते बाद",
+    "stock_outs": "none",
+    "interrupted": "no",
+    "promise_material": "no",
+    "confirms_readback": "no"
+   },
+   "expect": {
+    "status": "repeat"
+   }
+  },
+  {
+   "at": "2026-10-31T09:06:11.208189",
+   "status": "unclear",
+   "say": "Kothrud था?",
+   "error": null,
+   "params": {
+    "area": "Samera Road road",
+    "about": "doctor,area,products,samples,orders,stock_outs,promise,next_visit",
+    "doctor": "dot mehta",
+    "orders": "Telma forty eight: 30",
+    "chemist": "none",
+    "mr_said": "Kothrud था?",
+    "promise": "none",
+    "samples": "Telma forty eight: 1",
+    "feedback": "Pan D; Telma forty eight",
+    "language": "hi",
+    "products": "Pan D; Telma forty eight",
+    "next_visit": "दो हफ़्ते बाद",
+    "stock_outs": "none",
+    "interrupted": "yes",
+    "promise_material": "no",
+    "confirms_readback": "no"
+   },
+   "expect": {
+    "status": "repeat",
+    "note": "Saathi's own line sent as the rep's words"
+   }
+  },
+  {
+   "at": "2026-10-31T09:06:13.347177",
+   "status": "repeat",
+   "say": null,
+   "error": null,
+   "params": {
+    "area": "Samera Road road",
+    "about": "doctor,area,products,samples,orders,stock_outs,promise,next_visit",
+    "doctor": "dot mehta",
+    "orders": "Telma forty eight: 30",
+    "chemist": "none",
+    "mr_said": "",
+    "promise": "none",
+    "samples": "Telma forty eight: 1",
+    "feedback": "Pan D; Telma forty eight",
+    "language": "hi",
+    "products": "Pan D; Telma forty eight",
+    "next_visit": "दो हफ़्ते बाद",
+    "stock_outs": "none",
+    "interrupted": "no",
+    "promise_material": "no",
+    "confirms_readback": "no"
+   },
+   "expect": {
+    "status": "repeat"
+   }
+  },
+  {
+   "at": "2026-10-31T09:06:22.666836",
+   "status": "unclear",
+   "say": "Kothrud था?",
+   "error": null,
+   "params": {
+    "area": "Samera Road road",
+    "about": "doctor,area,products,samples,orders,stock_outs,promise,next_visit",
+    "doctor": "dot mehta",
+    "orders": "Telma forty eight: 30",
+    "chemist": "none",
+    "mr_said": "हां",
+    "promise": "none",
+    "samples": "Telma forty eight: 1",
+    "feedback": "Pan D; Telma forty eight",
+    "language": "hi",
+    "products": "Pan D; Telma forty eight",
+    "next_visit": "दो हफ़्ते बाद",
+    "stock_outs": "none",
+    "interrupted": "no",
+    "promise_material": "no",
+    "confirms_readback": "yes"
+   },
+   "expect": {
+    "say_not": "Kothrud था?",
+    "visit": {
+     "area": "Kothrud"
+    }
+   }
+  },
+  {
+   "at": "2026-10-31T09:06:24.926489",
+   "status": "repeat",
+   "say": null,
+   "error": null,
+   "params": {
+    "area": "Samera Road road",
+    "about": "doctor,area,products,samples,orders,stock_outs,promise,next_visit",
+    "doctor": "dot mehta",
+    "orders": "Telma forty eight: 30",
+    "chemist": "none",
+    "mr_said": "हां",
+    "promise": "none",
+    "samples": "Telma forty eight: 1",
+    "feedback": "Pan D; Telma forty eight",
+    "language": "hi",
+    "products": "Pan D; Telma forty eight",
+    "next_visit": "दो हफ़्ते बाद",
+    "stock_outs": "none",
+    "interrupted": "no",
+    "promise_material": "no",
+    "confirms_readback": "yes"
+   },
+   "expect": {}
+  },
+  {
+   "at": "2026-10-31T09:06:27.944421",
+   "status": "repeat",
+   "say": null,
+   "error": null,
+   "params": {
+    "area": "Samera Road road",
+    "about": "doctor,area,products,samples,orders,stock_outs,promise,next_visit",
+    "doctor": "dot mehta",
+    "orders": "Telma forty eight: 30",
+    "chemist": "none",
+    "mr_said": "हां",
+    "promise": "none",
+    "samples": "Telma forty eight: 1",
+    "feedback": "Pan D; Telma forty eight",
+    "language": "hi",
+    "products": "Pan D; Telma forty eight",
+    "next_visit": "दो हफ़्ते बाद",
+    "stock_outs": "none",
+    "interrupted": "no",
+    "promise_material": "no",
+    "confirms_readback": "yes"
+   },
+   "expect": {}
+  }
+ ]
+}

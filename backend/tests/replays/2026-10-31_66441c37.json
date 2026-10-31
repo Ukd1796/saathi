@@ -1,0 +1,203 @@
+{
+ "call": "66441c37-5680-40fb-b011-cbd275b73fb6",
+ "script": "M4",
+ "truth": {
+  "doctor_name": "Dr Mehta",
+  "area": "Kothrud",
+  "products_discussed": [
+   "Pan D",
+   "Telma 40"
+  ],
+  "samples": [
+   [
+    "Telma 40",
+    4
+   ]
+  ],
+  "chemist_name": "Sharma Medical",
+  "orders": [
+   [
+    "Storvas 20",
+    30
+   ]
+  ],
+  "stock_outs": [],
+  "promises": [],
+  "next_visit": "दो हफ़्ते बाद"
+ },
+ "what_happened": "The listen node read back its own garbled visit before any check. On the first check the agent put the order's Storvas into products discussed, dropped Pan D and Telma, and sent samples and next visit as 'none'. On the second it sent 'none' for everything but the next visit, wiping the doctor and crashing check_visit (KeyError ('doctor','none')).",
+ "rep_turns": [
+  {
+   "saathi": "नमस्ते Ujjwal! साथी बोल रही हूँ। Visit report देनी है, या किसी doctor की briefing चाहिए?",
+   "rep": "visit report देनी है",
+   "expect": {
+    "ask": [
+     "invite"
+    ]
+   }
+  },
+  {
+   "saathi": "ठीक है, बताइए।",
+   "rep": "मैं daughter मेहता समुला कोरथृड़ में pan d और telma forty discuss किया telma forty के चार sample लिए उसके बाद sharma medical पर twenty का order तीस मिला कोई stock issue नहीं था but कोई promise भी नहीं है net visit दो हफ़्ते बाद आए doctor मेहता को",
+   "expect": {
+    "visit": {
+     "doctor_name": "Dr Mehta",
+     "area": "Kothrud",
+     "products_discussed": [
+      "Pan D",
+      "Telma 40"
+     ],
+     "samples": [
+      [
+       "Telma 40",
+       4
+      ]
+     ],
+     "chemist_name": "Sharma Medical",
+     "orders": [
+      [
+       null,
+       30
+      ]
+     ],
+     "stock_outs": [],
+     "promises": [],
+     "next_visit": "दो हफ़्ते बाद"
+    },
+    "ask": [
+     "order_product"
+    ]
+   }
+  },
+  {
+   "saathi": "ठीक है, aapne Dr Mehta के साथ pan d aur telma forty discuss kiya, telma forty ke चार sample diye, Sharma Medical par twenty ka order तीस mila, stock issue nahi tha, aur next visit दो हफ़्ते बाद",
+   "rep": "sharma medical पर मुझे storvas twenty का order तीस मिला है storvas twenty",
+   "expect": {
+    "visit": {
+     "orders": [
+      [
+       "Storvas 20",
+       30
+      ]
+     ],
+     "products_discussed": [
+      "Pan D",
+      "Telma 40"
+     ],
+     "samples": [
+      [
+       "Telma 40",
+       4
+      ]
+     ],
+     "next_visit": "दो हफ़्ते बाद"
+    },
+    "ask": [
+     "readback"
+    ],
+    "note": "a correction to the order changes only the order"
+   }
+  },
+  {
+   "saathi": "Dr Mehta, Kothrud में मिले थे। Storvas twenty discuss हुए। कोई sample नहीं दिया। Sharma Medical में Storvas twenty का order तीस मिला। कोई stock issue नहीं था। कोई promise नहीं था। अगली visit none। सही है?",
+   "rep": "अगली visit दो हफ़्ते बाद है",
+   "expect": {
+    "visit": {
+     "doctor_name": "Dr Mehta",
+     "chemist_name": "Sharma Medical",
+     "next_visit": "दो हफ़्ते बाद"
+    },
+    "ask": [
+     "readback_part",
+     "confirm_readback"
+    ],
+    "note": "if the read-back already had the next visit right, repeating it only gets 'सही है?'"
+   }
+  }
+ ],
+ "agent_calls": [
+  {
+   "at": "2026-10-31T08:34:17.969183",
+   "status": "complete",
+   "say": "Dr Mehta, Kothrud में मिले थे। Storvas twenty discuss हुए। कोई sample नहीं दिया। Sharma Medical में Storvas twenty का order तीस मिला। कोई stock issue नहीं था। कोई promise नहीं था। अगली visit none। सही है?",
+   "error": null,
+   "params": {
+    "area": "Kothrud",
+    "about": "orders",
+    "doctor": "Dr Mehta",
+    "orders": "storvas twenty: 30",
+    "chemist": "Sharma Medical",
+    "mr_said": "sharma medical पर मुझे storvas twenty का order तीस मिला है storvas twenty",
+    "promise": "none",
+    "samples": "none",
+    "feedback": "none",
+    "language": "hi",
+    "products": "storvas twenty",
+    "next_visit": "none",
+    "stock_outs": "none",
+    "interrupted": "no",
+    "promise_material": "no",
+    "confirms_readback": "no"
+   },
+   "expect": {}
+  },
+  {
+   "at": "2026-10-31T08:34:44.012105",
+   "status": "error",
+   "say": "एक second, फिर से बताइए?",
+   "error": "KeyError: ('doctor', 'none')",
+   "params": {
+    "area": "Kothrud",
+    "about": "next_visit",
+    "doctor": "none",
+    "orders": "none",
+    "chemist": "none",
+    "mr_said": "अगली visit दो हफ़्ते बाद है",
+    "promise": "none",
+    "samples": "none",
+    "feedback": "none",
+    "language": "hi",
+    "products": "none",
+    "next_visit": "दो हफ़्ते बाद",
+    "stock_outs": "none",
+    "interrupted": "no",
+    "promise_material": "no",
+    "confirms_readback": "no"
+   },
+   "expect": {
+    "status_not": "error",
+    "visit": {
+     "doctor_name": "Dr Mehta",
+     "chemist_name": "Sharma Medical"
+    }
+   }
+  },
+  {
+   "at": "2026-10-31T08:34:56.101937",
+   "status": "error",
+   "say": "एक second, फिर से बताइए?",
+   "error": "KeyError: ('doctor', 'none')",
+   "params": {
+    "area": "Kothrud",
+    "about": "next_visit",
+    "doctor": "none",
+    "orders": "none",
+    "chemist": "none",
+    "mr_said": "अगली visit दो हफ़्ते बाद है",
+    "promise": "none",
+    "samples": "none",
+    "feedback": "none",
+    "language": "hi",
+    "products": "none",
+    "next_visit": "दो हफ़्ते बाद",
+    "stock_outs": "none",
+    "interrupted": "no",
+    "promise_material": "no",
+    "confirms_readback": "no"
+   },
+   "expect": {
+    "status_not": "error"
+   }
+  }
+ ]
+}
